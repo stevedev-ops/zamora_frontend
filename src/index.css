@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  body {
+    background: #ffffff !important;
+  }
+  body.print-thermal {
+    width: 78mm !important;
+    max-width: 78mm !important;
+    margin: 0 auto !important;
+    font-size: 11px !important;
+  }
+  body.print-thermal table th,
+  body.print-thermal table td {
+    padding: 2px 4px !important;
+    font-size: 10px !important;
+  }
+}
+

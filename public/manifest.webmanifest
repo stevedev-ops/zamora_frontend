@@ -1,0 +1,27 @@
+{
+  "name": "Zamora Liquor Store — POS & Debt Manager",
+  "short_name": "Zamora Liquor",
+  "description": "Offline-first Liquor Store POS, Inventory, CRM & Customer Self-Service Debt Portal",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "categories": ["business", "finance", "shopping"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
+
