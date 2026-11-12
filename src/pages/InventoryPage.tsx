@@ -6,6 +6,8 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { Modal } from '../components/common/Modal';
 import { LoadingState } from '../components/common/LoadingState';
 import { useToast } from '../components/common/Toast';
+import { ExportButtons } from '../components/common/ExportButtons';
+import { buildExportQuery } from '../utils/export';
 import { formatDate, formatDateTime, formatKsh } from '../utils/format';
 
 interface InventoryBatch {
@@ -137,6 +139,60 @@ export function InventoryPage() {
             Track exact batch cost layers, stock adjustments, damaged/expired goods, and movement logs
           </p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {tab === 'stock' ? (
+            <ExportButtons
+              filenameBase={lowStockOnly ? 'zamora-low-stock-inventory' : 'zamora-inventory'}
+              pdfPath={`/inventory/export/pdf${buildExportQuery({
+                search: search.trim(),
+                lowStockOnly,
+              })}`}
+              excelPath={`/inventory/export/excel${buildExportQuery({
+                search: search.trim(),
+                lowStockOnly,
+              })}`}
+              csvPath={`/inventory/export/csv${buildExportQuery({
+                search: search.trim(),
+                lowStockOnly,
+              })}`}
+              localCsv={{
+                columns: [
+                  { header: 'Product', value: (r) => r.name },
+                  { header: 'Brand', value: (r) => r.brand },
+                  { header: 'Size', value: (r) => r.bottleSize },
+                  { header: 'Category', value: (r) => r.categoryName },
+                  { header: 'Current Stock', value: (r) => r.currentStock },
+                  { header: 'Min Alert', value: (r) => r.minStockAlert },
+                  { header: 'Low Stock', value: (r) => (r.isLowStock ? 'LOW STOCK' : 'OK') },
+                  { header: 'Active Batches', value: (r) => r.activeBatches.length },
+                  { header: 'FIFO Cost Value (KSh)', value: (r) => r.stockCostValue },
+                  { header: 'Retail Value (KSh)', value: (r) => r.potentialRetailValue },
+                  { header: 'Est. Profit (KSh)', value: (r) => r.potentialProfit },
+                ],
+                rows: filteredItems,
+              }}
+            />
+          ) : (
+            <ExportButtons
+              filenameBase="zamora-inventory-movements"
+              pdfPath="/inventory/movements/export/pdf"
+              excelPath="/inventory/movements/export/excel"
+              csvPath="/inventory/movements/export/csv"
+              localCsv={{
+                columns: [
+                  { header: 'Date', value: (r) => r.createdAt },
+                  { header: 'Product', value: (r) => `${r.product.name} (${r.product.bottleSize})` },
+                  { header: 'Type', value: (r) => r.movementType },
+                  { header: 'Change', value: (r) => r.quantityChange },
+                  { header: 'Before', value: (r) => r.quantityBefore },
+                  { header: 'After', value: (r) => r.quantityAfter },
+                  { header: 'Cost Value (KSh)', value: (r) => r.totalCostValue },
+                  { header: 'Reason', value: (r) => r.reason || '' },
+                ],
+                rows: movements,
+              }}
+            />
+          )}
         <button
           onClick={() => {
             setAdjForm({
@@ -153,6 +209,7 @@ export function InventoryPage() {
           <PlusCircle className="h-4 w-4" />
           Stock Adjustment / Damage / Return
         </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

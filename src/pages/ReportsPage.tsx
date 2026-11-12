@@ -203,6 +203,14 @@ export function ReportsPage() {
           >
             <FileSpreadsheet className="h-4 w-4" /> Export Excel
           </button>
+          <button
+            onClick={() =>
+              downloadBinaryFile(`/reports/export/csv?${exportQuery()}`, `zamora-${tab}-report.csv`)
+            }
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            <Download className="h-4 w-4" /> Export CSV
+          </button>
         </div>
       </div>
 

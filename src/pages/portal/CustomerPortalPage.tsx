@@ -38,6 +38,7 @@ interface PortalDashboardData {
     currency: string;
     mpesaEnabled: boolean;
     mpesaPaybillOrTill: string | null;
+    mpesaAccountReference?: string | null;
   };
   customer: {
     accountNumber: string;
@@ -847,6 +848,21 @@ export function CustomerPortalPage() {
         subtitle={`Current Balance: ${formatKsh(dashboard.summary.currentBalance)}`}
       >
         <form onSubmit={handleInitiatePortalMpesa} className="space-y-4">
+          {dashboard.store.mpesaPaybillOrTill && (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+              <p className="font-semibold">
+                {dashboard.store.mpesaAccountReference
+                  ? `M-Pesa Paybill: ${dashboard.store.mpesaPaybillOrTill}`
+                  : `M-Pesa Till Number: ${dashboard.store.mpesaPaybillOrTill}`}
+              </p>
+              {dashboard.store.mpesaAccountReference && (
+                <p className="text-emerald-800 mt-0.5">
+                  Account Reference: <strong className="font-mono">{dashboard.store.mpesaAccountReference}</strong> (or{' '}
+                  <span className="font-mono">{dashboard.customer.accountNumber}</span>)
+                </p>
+              )}
+            </div>
+          )}
           <div>
             <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
               M-Pesa Phone Number

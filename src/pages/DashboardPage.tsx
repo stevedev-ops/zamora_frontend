@@ -30,6 +30,7 @@ import { StatCard } from '../components/common/StatCard';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { LoadingState } from '../components/common/LoadingState';
 import { useToast } from '../components/common/Toast';
+import { ExportButtons } from '../components/common/ExportButtons';
 import { formatDateTime, formatKsh } from '../utils/format';
 
 interface DashboardResponse {
@@ -324,17 +325,36 @@ export function DashboardPage() {
 
         {/* Low Stock Products */}
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm flex flex-col">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between gap-2 mb-3">
             <div className="flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-amber-500" />
               <h2 className="text-base font-bold text-slate-900">Low-Stock Alerts</h2>
             </div>
-            <button
-              onClick={() => navigate('/inventory')}
-              className="text-xs font-semibold text-slate-600 hover:text-slate-900 inline-flex items-center gap-1"
-            >
-              Inventory <ArrowRight className="h-3 w-3" />
-            </button>
+            <div className="flex items-center gap-2">
+              <ExportButtons
+                compact
+                filenameBase="zamora-low-stock"
+                pdfPath="/inventory/export/pdf?lowStockOnly=true"
+                excelPath="/inventory/export/excel?lowStockOnly=true"
+                csvPath="/inventory/export/csv?lowStockOnly=true"
+                localCsv={{
+                  columns: [
+                    { header: 'Product', value: (r) => r.name },
+                    { header: 'Size', value: (r) => r.bottleSize },
+                    { header: 'Category', value: (r) => r.categoryName },
+                    { header: 'Current Stock', value: (r) => r.currentStock },
+                    { header: 'Min Alert', value: (r) => r.minStockAlert },
+                  ],
+                  rows: data.lowStockProducts,
+                }}
+              />
+              <button
+                onClick={() => navigate('/inventory')}
+                className="text-xs font-semibold text-slate-600 hover:text-slate-900 inline-flex items-center gap-1"
+              >
+                Inventory <ArrowRight className="h-3 w-3" />
+              </button>
+            </div>
           </div>
           {data.lowStockProducts.length === 0 ? (
             <div className="flex-1 flex items-center justify-center text-xs text-slate-500 py-8">
@@ -365,14 +385,35 @@ export function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Recent Sales */}
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between gap-2 mb-3">
             <h2 className="text-base font-bold text-slate-900">Recent Sales</h2>
-            <button
-              onClick={() => navigate('/pos')}
-              className="text-xs font-semibold text-emerald-700 hover:underline"
-            >
-              Open POS
-            </button>
+            <div className="flex items-center gap-2">
+              <ExportButtons
+                compact
+                filenameBase="zamora-sales"
+                pdfPath="/sales/export/pdf"
+                excelPath="/sales/export/excel"
+                csvPath="/sales/export/csv"
+                localCsv={{
+                  columns: [
+                    { header: 'Receipt #', value: (r) => r.receiptNumber },
+                    { header: 'Date', value: (r) => r.soldAt },
+                    { header: 'Customer', value: (r) => r.customerName },
+                    { header: 'Method', value: (r) => r.paymentMethod },
+                    { header: 'Total (KSh)', value: (r) => r.totalAmount },
+                    { header: 'Paid (KSh)', value: (r) => r.amountPaid },
+                    { header: 'Debt (KSh)', value: (r) => r.outstandingAmount },
+                  ],
+                  rows: data.recentSales,
+                }}
+              />
+              <button
+                onClick={() => navigate('/pos')}
+                className="text-xs font-semibold text-emerald-700 hover:underline"
+              >
+                Open POS
+              </button>
+            </div>
           </div>
           <div className="divide-y divide-slate-100">
             {data.recentSales.length === 0 && (
@@ -405,14 +446,31 @@ export function DashboardPage() {
 
         {/* Recent Payments */}
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between gap-2 mb-3">
             <h2 className="text-base font-bold text-slate-900">Recent Payments</h2>
-            <button
-              onClick={() => navigate('/debt')}
-              className="text-xs font-semibold text-emerald-700 hover:underline"
-            >
-              Record Payment
-            </button>
+            <div className="flex items-center gap-2">
+              <ExportButtons
+                compact
+                filenameBase="zamora-recent-payments"
+                localCsv={{
+                  columns: [
+                    { header: 'Ref #', value: (r) => r.referenceNumber },
+                    { header: 'Customer', value: (r) => r.customerName },
+                    { header: 'Type', value: (r) => r.paymentType },
+                    { header: 'Method', value: (r) => r.method },
+                    { header: 'Amount (KSh)', value: (r) => r.amount },
+                    { header: 'Paid At', value: (r) => r.paidAt },
+                  ],
+                  rows: data.recentPayments,
+                }}
+              />
+              <button
+                onClick={() => navigate('/debt')}
+                className="text-xs font-semibold text-emerald-700 hover:underline"
+              >
+                Record Payment
+              </button>
+            </div>
           </div>
           <div className="divide-y divide-slate-100">
             {data.recentPayments.length === 0 && (
@@ -439,14 +497,36 @@ export function DashboardPage() {
 
         {/* Recent Debt Ledger Transactions */}
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between gap-2 mb-3">
             <h2 className="text-base font-bold text-slate-900">Recent Debt Activity</h2>
-            <button
-              onClick={() => navigate('/debt')}
-              className="text-xs font-semibold text-emerald-700 hover:underline"
-            >
-              Full Ledger
-            </button>
+            <div className="flex items-center gap-2">
+              <ExportButtons
+                compact
+                filenameBase="zamora-debt-ledger"
+                pdfPath="/debt/transactions/export/pdf"
+                excelPath="/debt/transactions/export/excel"
+                csvPath="/debt/transactions/export/csv"
+                localCsv={{
+                  columns: [
+                    { header: 'Date', value: (r) => r.createdAt },
+                    { header: 'Ref #', value: (r) => r.referenceNumber },
+                    { header: 'Customer', value: (r) => r.customerName },
+                    { header: 'Type', value: (r) => r.transactionType },
+                    { header: 'Direction', value: (r) => r.direction },
+                    { header: 'Description', value: (r) => r.description },
+                    { header: 'Amount (KSh)', value: (r) => r.amount },
+                    { header: 'Running Balance (KSh)', value: (r) => r.runningBalance },
+                  ],
+                  rows: data.recentDebtTransactions,
+                }}
+              />
+              <button
+                onClick={() => navigate('/debt')}
+                className="text-xs font-semibold text-emerald-700 hover:underline"
+              >
+                Full Ledger
+              </button>
+            </div>
           </div>
           <div className="divide-y divide-slate-100">
             {data.recentDebtTransactions.length === 0 && (

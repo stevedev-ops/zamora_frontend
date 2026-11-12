@@ -17,6 +17,8 @@ import {
   Wallet,
 } from 'lucide-react';
 import { api, downloadBinaryFile } from '../api/client';
+import { ExportButtons } from '../components/common/ExportButtons';
+import { buildExportQuery } from '../utils/export';
 import { Modal } from '../components/common/Modal';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { LoadingState } from '../components/common/LoadingState';
@@ -524,20 +526,53 @@ export function DebtManagementPage() {
       {debtors.length > 0 && (
         <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3 sm:p-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5">
-            <button
-              type="button"
-              onClick={() => setDebtorsOpen((v) => !v)}
-              className="flex items-center gap-2 text-left"
-            >
-              {debtorsOpen ? (
-                <ChevronDown className="h-4 w-4 text-slate-600 shrink-0" />
-              ) : (
-                <ChevronRight className="h-4 w-4 text-slate-600 shrink-0" />
-              )}
-              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                Customers With Debt ({filteredDebtors.length}/{debtors.length})
-              </h2>
-            </button>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => setDebtorsOpen((v) => !v)}
+                className="flex items-center gap-2 text-left"
+              >
+                {debtorsOpen ? (
+                  <ChevronDown className="h-4 w-4 text-slate-600 shrink-0" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 text-slate-600 shrink-0" />
+                )}
+                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                  Customers With Debt ({filteredDebtors.length}/{debtors.length})
+                </h2>
+              </button>
+              <ExportButtons
+                compact
+                filenameBase="zamora-debtors"
+                pdfPath={`/customers/export/pdf${buildExportQuery({
+                  hasDebt: true,
+                  search: debtorSearch.trim(),
+                  aging: agingFilter !== 'ALL' ? agingFilter : undefined,
+                })}`}
+                excelPath={`/customers/export/excel${buildExportQuery({
+                  hasDebt: true,
+                  search: debtorSearch.trim(),
+                  aging: agingFilter !== 'ALL' ? agingFilter : undefined,
+                })}`}
+                csvPath={`/customers/export/csv${buildExportQuery({
+                  hasDebt: true,
+                  search: debtorSearch.trim(),
+                  aging: agingFilter !== 'ALL' ? agingFilter : undefined,
+                })}`}
+                localCsv={{
+                  columns: [
+                    { header: 'Account #', value: (r) => r.accountNumber },
+                    { header: 'Customer Name', value: (r) => r.fullName },
+                    { header: 'Phone', value: (r) => r.phone },
+                    { header: 'Current Debt (KSh)', value: (r) => r.currentDebt },
+                    { header: 'Credit Limit (KSh)', value: (r) => r.creditLimit },
+                    { header: 'Days Idle', value: (r) => getAgingDays(r) },
+                    { header: 'Aging Bucket', value: (r) => getAgingBucket(getAgingDays(r)) },
+                  ],
+                  rows: filteredDebtors,
+                }}
+              />
+            </div>
             {debtorsOpen && (
               <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
                 <div className="relative">
@@ -705,6 +740,32 @@ export function DebtManagementPage() {
 
       {tab === 'ledger' && (
         <>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-slate-500">
+              Showing {transactions.length} ledger entry(ies)
+              {customerFilter ? ' (filtered by selected customer)' : ''}
+            </p>
+            <ExportButtons
+              compact
+              filenameBase="zamora-debt-ledger"
+              pdfPath={`/debt/transactions/export/pdf${buildExportQuery({ customerId: customerFilter })}`}
+              excelPath={`/debt/transactions/export/excel${buildExportQuery({ customerId: customerFilter })}`}
+              csvPath={`/debt/transactions/export/csv${buildExportQuery({ customerId: customerFilter })}`}
+              localCsv={{
+                columns: [
+                  { header: 'Date', value: (r) => r.createdAt },
+                  { header: 'Ref #', value: (r) => r.referenceNumber },
+                  { header: 'Customer', value: (r) => `${r.customer.fullName} (${r.customer.accountNumber})` },
+                  { header: 'Type', value: (r) => r.transactionType },
+                  { header: 'Direction', value: (r) => r.direction },
+                  { header: 'Description', value: (r) => r.description },
+                  { header: 'Amount (KSh)', value: (r) => r.amount },
+                  { header: 'Running Balance (KSh)', value: (r) => r.runningBalance },
+                ],
+                rows: transactions,
+              }}
+            />
+          </div>
           {/* Mobile Compact Dropdown Cards */}
           <div className="md:hidden space-y-2">
             {transactions.map((t) => {
@@ -953,6 +1014,31 @@ export function DebtManagementPage() {
 
       {tab === 'transfers' && (
         <>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-slate-500">
+              Showing {transfers.length} transfer(s)
+              {customerFilter ? ' (filtered by selected customer)' : ''}
+            </p>
+            <ExportButtons
+              compact
+              filenameBase="zamora-debt-transfers"
+              pdfPath={`/debt/transfers/export/pdf${buildExportQuery({ customerId: customerFilter })}`}
+              excelPath={`/debt/transfers/export/excel${buildExportQuery({ customerId: customerFilter })}`}
+              csvPath={`/debt/transfers/export/csv${buildExportQuery({ customerId: customerFilter })}`}
+              localCsv={{
+                columns: [
+                  { header: 'Date', value: (r) => r.createdAt },
+                  { header: 'Ref #', value: (r) => r.referenceNumber },
+                  { header: 'From Customer', value: (r) => r.fromCustomer.fullName },
+                  { header: 'To Customer', value: (r) => r.toCustomer.fullName },
+                  { header: 'Amount (KSh)', value: (r) => r.amount },
+                  { header: 'Status', value: (r) => r.status },
+                  { header: 'Reason', value: (r) => r.reason || '' },
+                ],
+                rows: transfers,
+              }}
+            />
+          </div>
           {/* Mobile Compact Dropdown Cards */}
           <div className="md:hidden space-y-2">
             {transfers.map((tr) => {
@@ -1116,6 +1202,28 @@ export function DebtManagementPage() {
 
       {tab === 'clarifications' && (
         <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-slate-500">
+              Showing {clarifications.length} clarification request(s)
+            </p>
+            <ExportButtons
+              compact
+              filenameBase="zamora-debt-clarifications"
+              pdfPath="/debt/clarifications/export/pdf"
+              excelPath="/debt/clarifications/export/excel"
+              csvPath="/debt/clarifications/export/csv"
+              localCsv={{
+                columns: [
+                  { header: 'Date', value: (r) => r.createdAt },
+                  { header: 'Customer', value: (r) => r.customer.fullName },
+                  { header: 'Status', value: (r) => r.status },
+                  { header: 'Message', value: (r) => r.message },
+                  { header: 'Owner Response', value: (r) => r.ownerResponse || '' },
+                ],
+                rows: clarifications,
+              }}
+            />
+          </div>
           {clarifications.length === 0 ? (
             <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
               No clarification requests from customers yet.

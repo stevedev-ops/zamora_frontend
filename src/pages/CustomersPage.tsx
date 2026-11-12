@@ -8,6 +8,8 @@ import { LoadingState } from '../components/common/LoadingState';
 import { SharePortalModal } from '../components/customers/SharePortalModal';
 import { CustomerDebtTabModal } from '../components/customers/CustomerDebtTabModal';
 import { useToast } from '../components/common/Toast';
+import { ExportButtons } from '../components/common/ExportButtons';
+import { buildExportQuery } from '../utils/export';
 import { formatDate, formatKsh } from '../utils/format';
 
 interface CustomerRow {
@@ -101,13 +103,43 @@ export function CustomersPage() {
             Manage registered customers, credit limits, statements, and self-service portal links
           </p>
         </div>
-        <button
-          onClick={() => setCreateOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800"
-        >
-          <Plus className="h-4 w-4" />
-          Register Customer
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <ExportButtons
+            filenameBase={hasDebtOnly ? 'zamora-debtors' : 'zamora-customers'}
+            pdfPath={`/customers/export/pdf${buildExportQuery({
+              search: search.trim(),
+              hasDebt: hasDebtOnly,
+            })}`}
+            excelPath={`/customers/export/excel${buildExportQuery({
+              search: search.trim(),
+              hasDebt: hasDebtOnly,
+            })}`}
+            csvPath={`/customers/export/csv${buildExportQuery({
+              search: search.trim(),
+              hasDebt: hasDebtOnly,
+            })}`}
+            localCsv={{
+              columns: [
+                { header: 'Account #', value: (r) => r.accountNumber },
+                { header: 'Customer Name', value: (r) => r.fullName },
+                { header: 'Phone', value: (r) => r.phone },
+                { header: 'Status', value: (r) => r.status },
+                { header: 'Current Debt (KSh)', value: (r) => r.currentDebt },
+                { header: 'Credit Limit (KSh)', value: (r) => r.creditLimit },
+                { header: 'Total Purchases (KSh)', value: (r) => r.totalPurchases },
+                { header: 'Total Payments (KSh)', value: (r) => r.totalPayments },
+              ],
+              rows: customers,
+            }}
+          />
+          <button
+            onClick={() => setCreateOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+          >
+            <Plus className="h-4 w-4" />
+            Register Customer
+          </button>
+        </div>
       </div>
 
       {/* Search & Filters */}

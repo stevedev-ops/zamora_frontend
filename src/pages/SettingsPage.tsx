@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Database, KeyRound, Save } from 'lucide-react';
 import { api, downloadBinaryFile } from '../api/client';
+import { ExportButtons } from '../components/common/ExportButtons';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { LoadingState } from '../components/common/LoadingState';
 import { useToast } from '../components/common/Toast';
@@ -85,7 +86,24 @@ export function SettingsPage() {
     e.preventDefault();
     if (!settings) return;
     try {
-      const res = await api.patch<{ settings: StoreSettings }>('/settings', settings);
+      const payload = {
+        storeName: settings.storeName.trim(),
+        storePhone: settings.storePhone.trim(),
+        storeEmail: settings.storeEmail?.trim() || null,
+        storeAddress: settings.storeAddress.trim(),
+        currency: settings.currency.trim() || 'KSh',
+        receiptFooter: settings.receiptFooter.trim(),
+        mpesaEnabled: settings.mpesaEnabled,
+        mpesaPaybillOrTill: settings.mpesaPaybillOrTill?.trim() || null,
+        mpesaAccountReference: settings.mpesaAccountReference?.trim() || null,
+        smsEnabled: settings.smsEnabled,
+        whatsappEnabled: settings.whatsappEnabled,
+        defaultCreditLimit: Number(settings.defaultCreditLimit) || 0,
+        lowStockDefaultAlert: Number(settings.lowStockDefaultAlert) || 0,
+        overdueDaysThreshold: Math.max(1, Number(settings.overdueDaysThreshold) || 14),
+        portalRequireOtp: settings.portalRequireOtp,
+      };
+      const res = await api.patch<{ settings: StoreSettings }>('/settings', payload);
       setSettings(res.settings);
       showToast('Store settings saved', 'success');
     } catch (err) {
@@ -214,14 +232,35 @@ export function SettingsPage() {
             </div>
             <div>
               <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
-                M-Pesa Paybill / Till
+                M-Pesa Till / Paybill Number
               </label>
               <input
                 type="text"
                 value={settings.mpesaPaybillOrTill || ''}
                 onChange={(e) => setSettings({ ...settings, mpesaPaybillOrTill: e.target.value })}
+                placeholder="e.g. Till 123456 or Paybill 522533"
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"
               />
+              <p className="mt-1 text-[11px] text-slate-500">
+                Buy Goods Till Number or Paybill shown on receipts &amp; customer debt portal.
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
+                M-Pesa Account Reference (Paybill)
+              </label>
+              <input
+                type="text"
+                value={settings.mpesaAccountReference || ''}
+                onChange={(e) =>
+                  setSettings({ ...settings, mpesaAccountReference: e.target.value })
+                }
+                placeholder="e.g. ZAMORA (optional for Till)"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"
+              />
+              <p className="mt-1 text-[11px] text-slate-500">
+                Account ref for Paybill payments; leave blank when using a Buy Goods Till Number.
+              </p>
             </div>
             <div>
               <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
@@ -382,7 +421,28 @@ export function SettingsPage() {
       )}
 
       {tab === 'audit' && (
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-slate-500">Showing latest {auditLogs.length} audit entries</p>
+            <ExportButtons
+              compact
+              filenameBase="zamora-audit-logs"
+              pdfPath="/settings/audit-logs/export/pdf"
+              excelPath="/settings/audit-logs/export/excel"
+              csvPath="/settings/audit-logs/export/csv"
+              localCsv={{
+                columns: [
+                  { header: 'Timestamp', value: (r) => r.createdAt },
+                  { header: 'Actor', value: (r) => r.user?.name || r.actorType },
+                  { header: 'Action', value: (r) => r.action },
+                  { header: 'Entity Type', value: (r) => r.entityType },
+                  { header: 'Entity ID', value: (r) => r.entityId || '' },
+                ],
+                rows: auditLogs,
+              }}
+            />
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-900 text-white text-xs uppercase">
               <tr>
@@ -412,10 +472,35 @@ export function SettingsPage() {
             </tbody>
           </table>
         </div>
+        </div>
       )}
 
       {tab === 'notifications' && (
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-slate-500">
+              Showing latest {notifications.length} notification logs
+            </p>
+            <ExportButtons
+              compact
+              filenameBase="zamora-notifications"
+              pdfPath="/settings/notifications/export/pdf"
+              excelPath="/settings/notifications/export/excel"
+              csvPath="/settings/notifications/export/csv"
+              localCsv={{
+                columns: [
+                  { header: 'Date', value: (r) => r.createdAt },
+                  { header: 'Channel', value: (r) => r.channel },
+                  { header: 'Recipient', value: (r) => r.recipient },
+                  { header: 'Event', value: (r) => r.eventType },
+                  { header: 'Status', value: (r) => r.status },
+                  { header: 'Message', value: (r) => r.message },
+                ],
+                rows: notifications,
+              }}
+            />
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-900 text-white text-xs uppercase">
               <tr>
@@ -449,6 +534,7 @@ export function SettingsPage() {
               ))}
             </tbody>
           </table>
+        </div>
         </div>
       )}
     </div>

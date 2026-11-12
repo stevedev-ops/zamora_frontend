@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { api, downloadBinaryFile } from '../api/client';
 import { StatCard } from '../components/common/StatCard';
+import { ExportButtons } from '../components/common/ExportButtons';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { Modal } from '../components/common/Modal';
 import { LoadingState } from '../components/common/LoadingState';
@@ -271,18 +272,24 @@ export function CustomerDetailPage() {
               Record Payment
             </button>
           )}
-          <button
-            onClick={() =>
-              downloadBinaryFile(
-                `/customers/${customer.id}/statement.pdf`,
-                `statement-${customer.accountNumber}.pdf`
-              )
-            }
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            <Download className="h-4 w-4" />
-            Statement PDF
-          </button>
+          <ExportButtons
+            filenameBase={`statement-${customer.accountNumber}`}
+            pdfPath={`/customers/${customer.id}/statement.pdf`}
+            excelPath={`/customers/${customer.id}/statement/export/excel`}
+            csvPath={`/customers/${customer.id}/statement/export/csv`}
+            localCsv={{
+              columns: [
+                { header: 'Date', value: (r) => r.createdAt },
+                { header: 'Reference #', value: (r) => r.referenceNumber },
+                { header: 'Type', value: (r) => r.transactionType },
+                { header: 'Direction', value: (r) => r.direction },
+                { header: 'Description', value: (r) => r.description },
+                { header: 'Amount (KSh)', value: (r) => r.amount },
+                { header: 'Running Balance (KSh)', value: (r) => r.runningBalance },
+              ],
+              rows: customer.debtTransactions,
+            }}
+          />
           <button
             onClick={() => setLimitOpen(true)}
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"

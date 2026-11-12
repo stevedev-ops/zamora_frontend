@@ -4,6 +4,8 @@ import { api } from '../api/client';
 import { Modal } from '../components/common/Modal';
 import { LoadingState } from '../components/common/LoadingState';
 import { useToast } from '../components/common/Toast';
+import { ExportButtons } from '../components/common/ExportButtons';
+import { buildExportQuery } from '../utils/export';
 import { formatDateTime, formatKsh, generateIdempotencyKey } from '../utils/format';
 
 interface Supplier {
@@ -56,10 +58,19 @@ export function StockPurchasesPage() {
     Array<{ productId: string; quantity: string; unitCostPrice: string }>
   >([]);
 
+  const [supplierFilter, setSupplierFilter] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
   const loadAll = useCallback(async () => {
     try {
+      const qs = buildExportQuery({
+        supplierId: supplierFilter,
+        startDate,
+        endDate,
+      });
       const [pRes, sRes, prRes] = await Promise.all([
-        api.get<{ purchases: PurchaseRow[] }>('/purchases'),
+        api.get<{ purchases: PurchaseRow[] }>(`/purchases${qs}`),
         api.get<{ suppliers: Supplier[] }>('/suppliers?status=ACTIVE'),
         api.get<{ products: Product[] }>('/products?status=ACTIVE'),
       ]);
@@ -71,7 +82,7 @@ export function StockPurchasesPage() {
     } finally {
       setLoading(false);
     }
-  }, [showToast]);
+  }, [supplierFilter, startDate, endDate, showToast]);
 
   useEffect(() => {
     loadAll();
@@ -163,13 +174,90 @@ export function StockPurchasesPage() {
             Record supplier deliveries, track batch purchase prices, and automatically increase stock
           </p>
         </div>
-        <button
-          onClick={openNewPurchase}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+        <div className="flex flex-wrap items-center gap-2">
+          <ExportButtons
+            filenameBase="zamora-stock-purchases"
+            pdfPath={`/purchases/export/pdf${buildExportQuery({
+              supplierId: supplierFilter,
+              startDate,
+              endDate,
+            })}`}
+            excelPath={`/purchases/export/excel${buildExportQuery({
+              supplierId: supplierFilter,
+              startDate,
+              endDate,
+            })}`}
+            csvPath={`/purchases/export/csv${buildExportQuery({
+              supplierId: supplierFilter,
+              startDate,
+              endDate,
+            })}`}
+            localCsv={{
+              columns: [
+                { header: 'Ref #', value: (r) => r.referenceNumber },
+                { header: 'Date', value: (r) => r.purchaseDate },
+                { header: 'Supplier', value: (r) => r.supplier.name },
+                {
+                  header: 'Items',
+                  value: (r) => r.items.map((it) => `${it.product.name} (${it.quantity})`).join(', '),
+                },
+                { header: 'Total Cost (KSh)', value: (r) => r.totalCost },
+                { header: 'Notes', value: (r) => r.notes || '' },
+              ],
+              rows: purchases,
+            }}
+          />
+          <button
+            onClick={openNewPurchase}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+          >
+            <PackagePlus className="h-4 w-4" />
+            Record Stock Purchase
+          </button>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3">
+        <select
+          value={supplierFilter}
+          onChange={(e) => setSupplierFilter(e.target.value)}
+          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
         >
-          <PackagePlus className="h-4 w-4" />
-          Record Stock Purchase
-        </button>
+          <option value="">All Suppliers</option>
+          {suppliers.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+        <input
+          type="date"
+          value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+          aria-label="Start date"
+          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+        />
+        <input
+          type="date"
+          value={endDate}
+          onChange={(e) => setEndDate(e.target.value)}
+          aria-label="End date"
+          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+        />
+        {(supplierFilter || startDate || endDate) && (
+          <button
+            type="button"
+            onClick={() => {
+              setSupplierFilter('');
+              setStartDate('');
+              setEndDate('');
+            }}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+          >
+            Clear Filters
+          </button>
+        )}
       </div>
 
       {/* Mobile Compact Dropdown Cards */}

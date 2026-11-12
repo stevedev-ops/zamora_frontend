@@ -6,6 +6,8 @@ import { StatCard } from '../components/common/StatCard';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { LoadingState } from '../components/common/LoadingState';
 import { useToast } from '../components/common/Toast';
+import { ExportButtons } from '../components/common/ExportButtons';
+import { buildExportQuery } from '../utils/export';
 import { formatDate, formatKsh } from '../utils/format';
 
 interface ExpenseRow {
@@ -36,6 +38,9 @@ export function ExpensesPage() {
   const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [searchFilter, setSearchFilter] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -51,7 +56,12 @@ export function ExpensesPage() {
 
   const loadExpenses = useCallback(async () => {
     try {
-      const qs = categoryFilter ? `?category=${categoryFilter}` : '';
+      const qs = buildExportQuery({
+        category: categoryFilter,
+        search: searchFilter.trim(),
+        startDate,
+        endDate,
+      });
       const res = await api.get<{ expenses: ExpenseRow[] }>(`/expenses${qs}`);
       setExpenses(res.expenses);
     } catch (err) {
@@ -59,7 +69,7 @@ export function ExpensesPage() {
     } finally {
       setLoading(false);
     }
-  }, [categoryFilter, showToast]);
+  }, [categoryFilter, searchFilter, startDate, endDate, showToast]);
 
   useEffect(() => {
     loadExpenses();
@@ -115,13 +125,49 @@ export function ExpensesPage() {
             Track rent, utilities, licences, transport, and repairs for accurate Net Operating Profit
           </p>
         </div>
-        <button
-          onClick={() => setModalOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800"
-        >
-          <Plus className="h-4 w-4" />
-          Record Expense
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <ExportButtons
+            filenameBase="zamora-expenses"
+            pdfPath={`/expenses/export/pdf${buildExportQuery({
+              category: categoryFilter,
+              search: searchFilter.trim(),
+              startDate,
+              endDate,
+            })}`}
+            excelPath={`/expenses/export/excel${buildExportQuery({
+              category: categoryFilter,
+              search: searchFilter.trim(),
+              startDate,
+              endDate,
+            })}`}
+            csvPath={`/expenses/export/csv${buildExportQuery({
+              category: categoryFilter,
+              search: searchFilter.trim(),
+              startDate,
+              endDate,
+            })}`}
+            localCsv={{
+              columns: [
+                { header: 'Ref #', value: (r) => r.referenceNumber },
+                { header: 'Date', value: (r) => r.expenseDate },
+                { header: 'Category', value: (r) => r.category },
+                { header: 'Title', value: (r) => r.title },
+                { header: 'Payee', value: (r) => r.payee || '' },
+                { header: 'Method', value: (r) => r.paymentMethod },
+                { header: 'Amount (KSh)', value: (r) => r.amount },
+                { header: 'Notes', value: (r) => r.notes || '' },
+              ],
+              rows: expenses,
+            }}
+          />
+          <button
+            onClick={() => setModalOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+          >
+            <Plus className="h-4 w-4" />
+            Record Expense
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
@@ -132,7 +178,28 @@ export function ExpensesPage() {
           icon={Receipt}
           tone="rose"
         />
-        <div className="sm:col-span-2 flex justify-end">
+        <div className="sm:col-span-2 flex flex-wrap items-center justify-end gap-2">
+          <input
+            type="text"
+            value={searchFilter}
+            onChange={(e) => setSearchFilter(e.target.value)}
+            placeholder="Search title, payee, ref #..."
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm sm:w-52"
+          />
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            aria-label="Start date"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+          />
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            aria-label="End date"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+          />
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}

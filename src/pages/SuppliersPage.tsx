@@ -5,6 +5,8 @@ import { Modal } from '../components/common/Modal';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { LoadingState } from '../components/common/LoadingState';
 import { useToast } from '../components/common/Toast';
+import { ExportButtons } from '../components/common/ExportButtons';
+import { buildExportQuery } from '../utils/export';
 import { formatDate, formatKsh } from '../utils/format';
 
 interface SupplierRow {
@@ -137,13 +139,34 @@ export function SuppliersPage() {
             Manage distributors and review historical purchase prices per supplier
           </p>
         </div>
-        <button
-          onClick={openCreate}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800"
-        >
-          <Plus className="h-4 w-4" />
-          Add Supplier
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <ExportButtons
+            filenameBase="zamora-suppliers"
+            pdfPath={`/suppliers/export/pdf${buildExportQuery({ search: search.trim() })}`}
+            excelPath={`/suppliers/export/excel${buildExportQuery({ search: search.trim() })}`}
+            csvPath={`/suppliers/export/csv${buildExportQuery({ search: search.trim() })}`}
+            localCsv={{
+              columns: [
+                { header: 'Supplier Name', value: (r) => r.name },
+                { header: 'Phone', value: (r) => r.phone },
+                { header: 'Email', value: (r) => r.email || '' },
+                { header: 'Address', value: (r) => r.address || '' },
+                { header: 'Status', value: (r) => r.status },
+                { header: 'Products', value: (r) => r.productCount },
+                { header: 'Deliveries', value: (r) => r.purchaseCount },
+                { header: 'Total Purchased (KSh)', value: (r) => r.totalPurchased },
+              ],
+              rows: suppliers,
+            }}
+          />
+          <button
+            onClick={openCreate}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+          >
+            <Plus className="h-4 w-4" />
+            Add Supplier
+          </button>
+        </div>
       </div>
 
       <div className="relative max-w-md">

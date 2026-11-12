@@ -6,6 +6,8 @@ import { Modal } from '../components/common/Modal';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { LoadingState } from '../components/common/LoadingState';
 import { useToast } from '../components/common/Toast';
+import { ExportButtons } from '../components/common/ExportButtons';
+import { buildExportQuery } from '../utils/export';
 import { formatKsh } from '../utils/format';
 
 interface Category {
@@ -225,7 +227,39 @@ export function ProductsPage() {
             Manage drinks catalog, buying/selling prices, profit margins, and custom categories
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <ExportButtons
+            filenameBase="zamora-products"
+            pdfPath={`/products/export/pdf${buildExportQuery({
+              search: search.trim(),
+              categoryId: categoryFilter,
+            })}`}
+            excelPath={`/products/export/excel${buildExportQuery({
+              search: search.trim(),
+              categoryId: categoryFilter,
+            })}`}
+            csvPath={`/products/export/csv${buildExportQuery({
+              search: search.trim(),
+              categoryId: categoryFilter,
+            })}`}
+            localCsv={{
+              columns: [
+                { header: 'Product', value: (r) => r.name },
+                { header: 'Brand', value: (r) => r.brand },
+                { header: 'Size', value: (r) => r.bottleSize },
+                { header: 'Category', value: (r) => r.category?.name || '' },
+                { header: 'Supplier', value: (r) => r.supplier?.name || '' },
+                { header: 'Barcode', value: (r) => r.barcode || '' },
+                { header: 'Buy Price (KSh)', value: (r) => r.purchasePrice },
+                { header: 'Sell Price (KSh)', value: (r) => r.sellingPrice },
+                { header: 'Margin %', value: (r) => r.profitMarginPercent },
+                { header: 'Stock', value: (r) => r.currentStock },
+                { header: 'Min Alert', value: (r) => r.minStockAlert },
+                { header: 'Status', value: (r) => r.status },
+              ],
+              rows: filtered,
+            }}
+          />
           <button
             onClick={() => setCategoryModalOpen(true)}
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
