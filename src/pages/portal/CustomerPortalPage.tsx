@@ -37,6 +37,7 @@ interface PortalDashboardData {
     storeAddress: string;
     currency: string;
     mpesaEnabled: boolean;
+    mpesaType?: string | null;
     mpesaPaybillOrTill: string | null;
     mpesaAccountReference?: string | null;
   };
@@ -542,6 +543,65 @@ export function CustomerPortalPage() {
           </div>
         </section>
 
+        {/* Payment Method Configured by Store (Pochi la Biashara / Paybill / Till) */}
+        {dashboard.store.mpesaEnabled && dashboard.store.mpesaPaybillOrTill && (
+          <section className="rounded-xl border border-emerald-200 bg-emerald-50/80 px-4 py-3.5 sm:px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-800">
+                How to Pay via M-Pesa (
+                {dashboard.store.mpesaType === 'POCHI_LA_BIASHARA'
+                  ? 'Pochi la Biashara'
+                  : dashboard.store.mpesaType === 'TILL' ||
+                    (!dashboard.store.mpesaType && !dashboard.store.mpesaAccountReference)
+                  ? 'Buy Goods Till'
+                  : 'Paybill'}
+                )
+              </p>
+              <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-emerald-950">
+                <span>
+                  {dashboard.store.mpesaType === 'POCHI_LA_BIASHARA'
+                    ? 'Pochi Number:'
+                    : dashboard.store.mpesaType === 'TILL' ||
+                      (!dashboard.store.mpesaType && !dashboard.store.mpesaAccountReference)
+                    ? 'Till Number:'
+                    : 'Paybill Number:'}{' '}
+                  <strong className="font-mono text-base font-bold">
+                    {dashboard.store.mpesaPaybillOrTill}
+                  </strong>
+                </span>
+                {(dashboard.store.mpesaType === 'PAYBILL' ||
+                  (!dashboard.store.mpesaType && dashboard.store.mpesaAccountReference)) && (
+                  <span>
+                    Account Ref:{' '}
+                    <strong className="font-mono font-bold">
+                      {dashboard.store.mpesaAccountReference?.trim() ||
+                        dashboard.customer.accountNumber}
+                    </strong>
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-emerald-800 mt-1">
+                {dashboard.store.mpesaType === 'POCHI_LA_BIASHARA'
+                  ? 'Open M-Pesa → Pochi la Biashara / Send Money and send to the number above.'
+                  : dashboard.store.mpesaType === 'TILL' ||
+                    (!dashboard.store.mpesaType && !dashboard.store.mpesaAccountReference)
+                  ? 'Open M-Pesa → Lipa na M-Pesa → Buy Goods and Services and enter the Till number above.'
+                  : 'Open M-Pesa → Lipa na M-Pesa → Paybill and enter the Paybill & Account Ref above.'}
+              </p>
+            </div>
+            {dashboard.summary.currentBalance > 0 && (
+              <button
+                type="button"
+                onClick={() => setMpesaOpen(true)}
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-emerald-700 shrink-0"
+              >
+                <Smartphone className="w-3.5 h-3.5" />
+                Pay Now via M-Pesa
+              </button>
+            )}
+          </section>
+        )}
+
         {/* Summary KPIs */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           <StatCard
@@ -851,14 +911,20 @@ export function CustomerPortalPage() {
           {dashboard.store.mpesaPaybillOrTill && (
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
               <p className="font-semibold">
-                {dashboard.store.mpesaAccountReference
-                  ? `M-Pesa Paybill: ${dashboard.store.mpesaPaybillOrTill}`
-                  : `M-Pesa Till Number: ${dashboard.store.mpesaPaybillOrTill}`}
+                {dashboard.store.mpesaType === 'POCHI_LA_BIASHARA'
+                  ? `Pochi la Biashara: ${dashboard.store.mpesaPaybillOrTill}`
+                  : dashboard.store.mpesaType === 'TILL' ||
+                    (!dashboard.store.mpesaType && !dashboard.store.mpesaAccountReference)
+                  ? `M-Pesa Till Number: ${dashboard.store.mpesaPaybillOrTill}`
+                  : `M-Pesa Paybill: ${dashboard.store.mpesaPaybillOrTill}`}
               </p>
-              {dashboard.store.mpesaAccountReference && (
+              {(dashboard.store.mpesaType === 'PAYBILL' ||
+                (!dashboard.store.mpesaType && dashboard.store.mpesaAccountReference)) && (
                 <p className="text-emerald-800 mt-0.5">
-                  Account Reference: <strong className="font-mono">{dashboard.store.mpesaAccountReference}</strong> (or{' '}
-                  <span className="font-mono">{dashboard.customer.accountNumber}</span>)
+                  Account Reference:{' '}
+                  <strong className="font-mono">
+                    {dashboard.store.mpesaAccountReference?.trim() || dashboard.customer.accountNumber}
+                  </strong>
                 </p>
               )}
             </div>

@@ -77,6 +77,12 @@ export function ReceiptModal({
               <span className="font-mono text-slate-900">{sale.mpesaReference}</span>
             </div>
           )}
+          {sale.notes && (
+            <div className="flex justify-between gap-4">
+              <span className="text-slate-500 shrink-0">Note</span>
+              <span className="text-right font-medium text-slate-900">{sale.notes}</span>
+            </div>
+          )}
         </div>
 
         <div className="overflow-x-auto border border-slate-200 rounded-lg">

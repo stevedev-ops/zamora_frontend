@@ -1,6 +1,16 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Eye, Pencil, Plus, Search, Share2, Users } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  Pencil,
+  Plus,
+  Search,
+  Share2,
+  Trash2,
+  Users,
+} from 'lucide-react';
 import { api } from '../api/client';
 import { Modal } from '../components/common/Modal';
 import { StatusBadge } from '../components/common/StatusBadge';
@@ -44,6 +54,8 @@ export function CustomersPage() {
     creditLimit: '5000',
     notes: '',
   });
+  const [deleteTarget, setDeleteTarget] = useState<CustomerRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [shareTarget, setShareTarget] = useState<CustomerRow | null>(null);
   const [tabTarget, setTabTarget] = useState<CustomerRow | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -259,6 +271,19 @@ export function CustomersPage() {
                         <Eye className="h-3.5 w-3.5" />
                         Profile
                       </Link>
+                      <button
+                        type="button"
+                        disabled={c.currentDebt > 0}
+                        onClick={() => setDeleteTarget(c)}
+                        title={
+                          c.currentDebt > 0
+                            ? 'Cannot delete customer with active debt'
+                            : 'Delete customer permanently'
+                        }
+                        className="inline-flex items-center justify-center gap-1 rounded-lg border border-rose-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                     </div>
                   </div>
                 )}
@@ -350,6 +375,19 @@ export function CustomersPage() {
                         <Eye className="h-3.5 w-3.5" />
                         View
                       </Link>
+                      <button
+                        type="button"
+                        disabled={c.currentDebt > 0}
+                        onClick={() => setDeleteTarget(c)}
+                        title={
+                          c.currentDebt > 0
+                            ? 'Cannot delete a customer who owes debt'
+                            : 'Delete customer permanently'
+                        }
+                        className="inline-flex items-center gap-1 rounded border border-rose-200 bg-white px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                     </td>
                   </tr>
                   {isOpen && (
@@ -493,6 +531,60 @@ export function CustomersPage() {
         initialMode={tabTarget && tabTarget.currentDebt > 0 ? 'edit' : 'add'}
         onSuccess={loadCustomers}
       />
+
+      <Modal
+        open={Boolean(deleteTarget)}
+        onClose={() => !deleting && setDeleteTarget(null)}
+        title={`Delete ${deleteTarget?.fullName || 'Customer'}?`}
+        subtitle={
+          deleteTarget
+            ? `${deleteTarget.accountNumber} · Current Debt: ${formatKsh(deleteTarget.currentDebt)}`
+            : undefined
+        }
+      >
+        <div className="space-y-4">
+          <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900 space-y-1">
+            <p className="font-semibold">
+              This will permanently remove the customer profile and debt history.
+            </p>
+            <p>
+              Customers with an unpaid balance cannot be deleted. Past store sales &amp; revenue
+              totals stay preserved.
+            </p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={deleting}
+              onClick={() => setDeleteTarget(null)}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={deleting || (deleteTarget?.currentDebt ?? 0) > 0}
+              onClick={async () => {
+                if (!deleteTarget) return;
+                setDeleting(true);
+                try {
+                  await api.delete(`/customers/${deleteTarget.id}`);
+                  showToast(`${deleteTarget.fullName} deleted`, 'success');
+                  setDeleteTarget(null);
+                  await loadCustomers();
+                } catch (err) {
+                  showToast(err instanceof Error ? err.message : 'Delete failed', 'error');
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+              className="rounded-lg bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+            >
+              {deleting ? 'Deleting...' : 'Confirm Delete Customer'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

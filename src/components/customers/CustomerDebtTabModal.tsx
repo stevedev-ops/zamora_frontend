@@ -487,7 +487,7 @@ export function CustomerDebtTabModal({
                 type="text"
                 value={addNote}
                 onChange={(e) => setAddNote(e.target.value)}
-                placeholder="e.g. Bought for Steve"
+                placeholder="e.g. This drink was bought for John"
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
               />
             </div>
@@ -690,7 +690,7 @@ export function CustomerDebtTabModal({
                 type="text"
                 value={editNote}
                 onChange={(e) => setEditNote(e.target.value)}
-                placeholder="e.g. Bought for Steve"
+                placeholder="e.g. This drink was bought for John"
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
               />
             </div>

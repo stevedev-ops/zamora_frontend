@@ -6,6 +6,12 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { LoadingState } from '../components/common/LoadingState';
 import { useToast } from '../components/common/Toast';
 import { formatDateTime } from '../utils/format';
+import {
+  formatMpesaPaymentSummary,
+  getMpesaOptionLabel,
+  MpesaPaymentOptionType,
+  normalizeMpesaType,
+} from '../utils/mpesa';
 
 interface StoreSettings {
   storeName: string;
@@ -15,6 +21,7 @@ interface StoreSettings {
   currency: string;
   receiptFooter: string;
   mpesaEnabled: boolean;
+  mpesaType?: MpesaPaymentOptionType | string | null;
   mpesaPaybillOrTill: string | null;
   mpesaAccountReference: string | null;
   smsEnabled: boolean;
@@ -86,6 +93,7 @@ export function SettingsPage() {
     e.preventDefault();
     if (!settings) return;
     try {
+      const mpesaType = normalizeMpesaType(settings);
       const payload = {
         storeName: settings.storeName.trim(),
         storePhone: settings.storePhone.trim(),
@@ -94,8 +102,10 @@ export function SettingsPage() {
         currency: settings.currency.trim() || 'KSh',
         receiptFooter: settings.receiptFooter.trim(),
         mpesaEnabled: settings.mpesaEnabled,
+        mpesaType,
         mpesaPaybillOrTill: settings.mpesaPaybillOrTill?.trim() || null,
-        mpesaAccountReference: settings.mpesaAccountReference?.trim() || null,
+        mpesaAccountReference:
+          mpesaType === 'PAYBILL' ? settings.mpesaAccountReference?.trim() || null : null,
         smsEnabled: settings.smsEnabled,
         whatsappEnabled: settings.whatsappEnabled,
         defaultCreditLimit: Number(settings.defaultCreditLimit) || 0,
@@ -230,37 +240,106 @@ export function SettingsPage() {
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
             </div>
-            <div>
-              <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
-                M-Pesa Till / Paybill Number
-              </label>
-              <input
-                type="text"
-                value={settings.mpesaPaybillOrTill || ''}
-                onChange={(e) => setSettings({ ...settings, mpesaPaybillOrTill: e.target.value })}
-                placeholder="e.g. Till 123456 or Paybill 522533"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"
-              />
-              <p className="mt-1 text-[11px] text-slate-500">
-                Buy Goods Till Number or Paybill shown on receipts &amp; customer debt portal.
-              </p>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
-                M-Pesa Account Reference (Paybill)
-              </label>
-              <input
-                type="text"
-                value={settings.mpesaAccountReference || ''}
-                onChange={(e) =>
-                  setSettings({ ...settings, mpesaAccountReference: e.target.value })
-                }
-                placeholder="e.g. ZAMORA (optional for Till)"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"
-              />
-              <p className="mt-1 text-[11px] text-slate-500">
-                Account ref for Paybill payments; leave blank when using a Buy Goods Till Number.
-              </p>
+            <div className="md:col-span-2 rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 space-y-3">
+              <div>
+                <label className="block text-xs font-semibold uppercase text-emerald-900 mb-1.5">
+                  Customer Payment Method (Shown on Customer Portal &amp; Receipts)
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {(
+                    [
+                      {
+                        value: 'POCHI_LA_BIASHARA',
+                        title: 'Pochi la Biashara',
+                        desc: 'Mobile phone / Pochi number',
+                      },
+                      {
+                        value: 'PAYBILL',
+                        title: 'M-Pesa Paybill',
+                        desc: 'Paybill + Account reference',
+                      },
+                      {
+                        value: 'TILL',
+                        title: 'M-Pesa Till',
+                        desc: 'Buy Goods & Services Till No.',
+                      },
+                    ] as const
+                  ).map((opt) => {
+                    const active = normalizeMpesaType(settings) === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setSettings({ ...settings, mpesaType: opt.value })}
+                        className={`text-left rounded-lg border px-3 py-2.5 transition-colors ${
+                          active
+                            ? 'border-emerald-600 bg-white ring-2 ring-emerald-500/20'
+                            : 'border-emerald-200/80 bg-white/70 hover:bg-white'
+                        }`}
+                      >
+                        <p className="text-sm font-semibold text-slate-900">{opt.title}</p>
+                        <p className="text-[11px] text-slate-500">{opt.desc}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
+                    {normalizeMpesaType(settings) === 'POCHI_LA_BIASHARA'
+                      ? 'Pochi la Biashara Number'
+                      : normalizeMpesaType(settings) === 'PAYBILL'
+                      ? 'Paybill Business Number'
+                      : 'Buy Goods Till Number'}
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.mpesaPaybillOrTill || ''}
+                    onChange={(e) =>
+                      setSettings({ ...settings, mpesaPaybillOrTill: e.target.value })
+                    }
+                    placeholder={
+                      normalizeMpesaType(settings) === 'POCHI_LA_BIASHARA'
+                        ? 'e.g. 0712345678'
+                        : normalizeMpesaType(settings) === 'PAYBILL'
+                        ? 'e.g. 522533'
+                        : 'e.g. 123456'
+                    }
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-mono"
+                  />
+                </div>
+                {normalizeMpesaType(settings) === 'PAYBILL' && (
+                  <div>
+                    <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
+                      M-Pesa Account Reference (Paybill)
+                    </label>
+                    <input
+                      type="text"
+                      value={settings.mpesaAccountReference || ''}
+                      onChange={(e) =>
+                        setSettings({ ...settings, mpesaAccountReference: e.target.value })
+                      }
+                      placeholder="e.g. ZAMORA (or uses Customer Account #)"
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-mono"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs">
+                <span className="text-emerald-900">
+                  Selected option:{' '}
+                  <strong>{getMpesaOptionLabel(normalizeMpesaType(settings))}</strong>
+                </span>
+                <span className="font-mono font-semibold text-emerald-950 bg-white border border-emerald-200 rounded px-2.5 py-1">
+                  {formatMpesaPaymentSummary({
+                    ...settings,
+                    mpesaType: normalizeMpesaType(settings),
+                  }) || 'Enter number & enable M-Pesa to show on Customer Portal'}
+                </span>
+              </div>
             </div>
             <div>
               <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">

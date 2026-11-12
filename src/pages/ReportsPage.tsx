@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Download, FileSpreadsheet } from 'lucide-react';
 import {
   Bar,
@@ -15,6 +16,7 @@ import { StatCard } from '../components/common/StatCard';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { LoadingState } from '../components/common/LoadingState';
 import { useToast } from '../components/common/Toast';
+import { DailyClosingPanel } from '../components/reports/DailyClosingPanel';
 import { formatDateTime, formatKsh } from '../utils/format';
 
 interface ReportResponse {
@@ -134,10 +136,19 @@ const PRESETS = [
 
 export function ReportsPage() {
   const { showToast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTabParam = searchParams.get('tab');
+  const initialTab: 'pnl' | 'closing' | 'products' | 'debt' | 'stock' =
+    initialTabParam === 'closing' ||
+    initialTabParam === 'products' ||
+    initialTabParam === 'debt' ||
+    initialTabParam === 'stock'
+      ? initialTabParam
+      : 'pnl';
   const [preset, setPreset] = useState<string>('this_month');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [tab, setTab] = useState<'pnl' | 'products' | 'debt' | 'stock'>('pnl');
+  const [tab, setTab] = useState<'pnl' | 'closing' | 'products' | 'debt' | 'stock'>(initialTab);
   const [data, setData] = useState<ReportResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedRowKey, setExpandedRowKey] = useState<string | null>(null);
@@ -183,75 +194,80 @@ export function ReportsPage() {
             reconciliation
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() =>
-              downloadBinaryFile(`/reports/export/pdf?${exportQuery()}`, `zamora-${tab}-report.pdf`)
-            }
-            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white hover:bg-slate-800"
-          >
-            <Download className="h-4 w-4" /> Export PDF
-          </button>
-          <button
-            onClick={() =>
-              downloadBinaryFile(
-                `/reports/export/excel?${exportQuery()}`,
-                'zamora-financial-report.xlsx'
-              )
-            }
-            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
-          >
-            <FileSpreadsheet className="h-4 w-4" /> Export Excel
-          </button>
-          <button
-            onClick={() =>
-              downloadBinaryFile(`/reports/export/csv?${exportQuery()}`, `zamora-${tab}-report.csv`)
-            }
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            <Download className="h-4 w-4" /> Export CSV
-          </button>
-        </div>
-      </div>
-
-      {/* Period Filter Bar */}
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3">
-        {PRESETS.map(([key, label]) => (
-          <button
-            key={key}
-            onClick={() => setPreset(key)}
-            className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
-              preset === key
-                ? 'bg-slate-900 text-white'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-        {preset === 'custom' && (
-          <div className="flex items-center gap-2 ml-auto">
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="rounded border border-slate-300 px-2.5 py-1 text-xs"
-            />
-            <span className="text-xs text-slate-500">to</span>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="rounded border border-slate-300 px-2.5 py-1 text-xs"
-            />
+        {tab !== 'closing' && (
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() =>
+                downloadBinaryFile(`/reports/export/pdf?${exportQuery()}`, `zamora-${tab}-report.pdf`)
+              }
+              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+            >
+              <Download className="h-4 w-4" /> Export PDF
+            </button>
+            <button
+              onClick={() =>
+                downloadBinaryFile(
+                  `/reports/export/excel?${exportQuery()}`,
+                  'zamora-financial-report.xlsx'
+                )
+              }
+              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
+            >
+              <FileSpreadsheet className="h-4 w-4" /> Export Excel
+            </button>
+            <button
+              onClick={() =>
+                downloadBinaryFile(`/reports/export/csv?${exportQuery()}`, `zamora-${tab}-report.csv`)
+              }
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <Download className="h-4 w-4" /> Export CSV
+            </button>
           </div>
         )}
       </div>
+
+      {/* Period Filter Bar */}
+      {tab !== 'closing' && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3">
+          {PRESETS.map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setPreset(key)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                preset === key
+                  ? 'bg-slate-900 text-white'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+          {preset === 'custom' && (
+            <div className="flex items-center gap-2 ml-auto">
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="rounded border border-slate-300 px-2.5 py-1 text-xs"
+              />
+              <span className="text-xs text-slate-500">to</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="rounded border border-slate-300 px-2.5 py-1 text-xs"
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Report Section Tabs */}
       <div className="flex gap-2 border-b border-slate-200 pb-3 overflow-x-auto">
         {(
           [
+            ['closing', 'Closing Summary'],
             ['pnl', 'Profit & Loss (P&L)'],
             ['products', 'Product Profitability'],
             ['debt', 'Customer Debt & Repayments'],
@@ -260,7 +276,10 @@ export function ReportsPage() {
         ).map(([key, label]) => (
           <button
             key={key}
-            onClick={() => setTab(key)}
+            onClick={() => {
+              setTab(key);
+              setSearchParams(key === 'pnl' ? {} : { tab: key });
+            }}
             className={`rounded-lg px-4 py-2 text-xs font-semibold whitespace-nowrap ${
               tab === key
                 ? 'bg-slate-900 text-white'
@@ -271,6 +290,8 @@ export function ReportsPage() {
           </button>
         ))}
       </div>
+
+      {tab === 'closing' && <DailyClosingPanel />}
 
       {tab === 'pnl' && (
         <div className="space-y-6">

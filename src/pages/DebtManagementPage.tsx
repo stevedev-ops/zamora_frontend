@@ -51,6 +51,7 @@ interface LedgerTx {
   amount: number;
   runningBalance: number;
   description: string;
+  reason?: string | null;
   isReversed: boolean;
   createdAt: string;
   customer: { id: string; fullName: string; accountNumber: string };
@@ -949,6 +950,11 @@ export function DebtManagementPage() {
                           <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
                             <div className="space-y-0.5 text-slate-600">
                               <p className="font-medium text-slate-900">{t.description}</p>
+                              {(t.reason || t.sale?.notes) && (
+                                <p className="text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-0.5 inline-block">
+                                  Note: {t.reason || t.sale?.notes}
+                                </p>
+                              )}
                               <p className="text-[11px] text-slate-500">
                                 {t.customer.accountNumber} · Recorded {formatDateTime(t.createdAt)}
                               </p>
@@ -1528,7 +1534,7 @@ export function DebtManagementPage() {
           <div>
             <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
               {adjustForm.adjustmentKind === 'ADD_DEBT'
-                ? 'Note / Reason (Optional — e.g. Bought for Steve)'
+                ? 'Debt Note (Optional — e.g. This drink was bought for John)'
                 : 'Reason (Mandatory)'}
             </label>
             <textarea
@@ -1538,7 +1544,7 @@ export function DebtManagementPage() {
               onChange={(e) => setAdjustForm((f) => ({ ...f, reason: e.target.value }))}
               placeholder={
                 adjustForm.adjustmentKind === 'ADD_DEBT'
-                  ? 'Optional note e.g. Bought for Steve'
+                  ? 'Optional note e.g. This drink was bought for John'
                   : 'Enter reason for this adjustment'
               }
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"

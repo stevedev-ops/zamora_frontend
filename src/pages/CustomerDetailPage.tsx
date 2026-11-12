@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
   Download,
@@ -7,6 +7,7 @@ import {
   Pencil,
   Share2,
   ShieldCheck,
+  Trash2,
   Wallet,
 } from 'lucide-react';
 import { api, downloadBinaryFile } from '../api/client';
@@ -98,6 +99,7 @@ interface CustomerDetail {
 
 export function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { showToast } = useToast();
 
   const [customer, setCustomer] = useState<CustomerDetail | null>(null);
@@ -108,6 +110,8 @@ export function CustomerDetailPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [limitOpen, setLimitOpen] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [tabModalOpen, setTabModalOpen] = useState(false);
   const [tabInitialMode, setTabInitialMode] = useState<'add' | 'edit'>('add');
   const [tabInitialSaleId, setTabInitialSaleId] = useState<string | null>(null);
@@ -208,6 +212,24 @@ export function CustomerDetailPage() {
     }
   };
 
+  const handleDeleteCustomer = async () => {
+    if (!id || !customer) return;
+    if (customer.account.currentBalance > 0) {
+      showToast('Cannot delete a customer who still owes debt.', 'error');
+      return;
+    }
+    setDeleting(true);
+    try {
+      await api.delete(`/customers/${id}`);
+      showToast(`${customer.fullName} deleted permanently`, 'success');
+      navigate('/customers');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Delete failed', 'error');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   if (loading || !customer) return <LoadingState label="Loading customer account..." />;
 
   return (
@@ -303,6 +325,20 @@ export function CustomerDetailPage() {
           >
             <Edit2 className="h-4 w-4" />
             Edit
+          </button>
+          <button
+            type="button"
+            disabled={customer.account.currentBalance > 0}
+            onClick={() => setDeleteOpen(true)}
+            title={
+              customer.account.currentBalance > 0
+                ? 'Cannot delete a customer with an active debt balance. Clear debt first.'
+                : 'Delete customer permanently'
+            }
+            className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-white px-3.5 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete
           </button>
         </div>
       </div>
@@ -795,6 +831,41 @@ export function CustomerDetailPage() {
         existingSales={customer?.sales}
         onSuccess={loadCustomer}
       />
+
+      <Modal
+        open={deleteOpen}
+        onClose={() => !deleting && setDeleteOpen(false)}
+        title={`Delete ${customer.fullName}?`}
+        subtitle={`Account ${customer.accountNumber} · Current Debt: ${formatKsh(customer.account.currentBalance)}`}
+      >
+        <div className="space-y-4">
+          <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900 space-y-1">
+            <p className="font-semibold">This will permanently remove the customer profile and debt ledger.</p>
+            <p>
+              Customers with an unpaid debt cannot be deleted. Past store sales &amp; revenue reports
+              will remain intact.
+            </p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={deleting}
+              onClick={() => setDeleteOpen(false)}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={deleting || customer.account.currentBalance > 0}
+              onClick={handleDeleteCustomer}
+              className="rounded-lg bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+            >
+              {deleting ? 'Deleting...' : 'Confirm Delete Customer'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

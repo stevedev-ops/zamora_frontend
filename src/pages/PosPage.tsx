@@ -23,6 +23,7 @@ import { Modal } from '../components/common/Modal';
 import { LoadingState } from '../components/common/LoadingState';
 import { BarcodeScannerModal } from '../components/pos/BarcodeScannerModal';
 import { ReceiptModal, ReceiptSaleData } from '../components/pos/ReceiptModal';
+import { DailyClosingPanel } from '../components/reports/DailyClosingPanel';
 import {
   CustomerDebtTabModal,
   DebtTabSaleInput,
@@ -147,6 +148,7 @@ export function PosPage() {
   const [stkPhone, setStkPhone] = useState('');
   const [stkCheckoutId, setStkCheckoutId] = useState<string | null>(null);
   const [stkBusy, setStkBusy] = useState(false);
+  const [closingOpen, setClosingOpen] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -694,26 +696,36 @@ export function PosPage() {
               Tap products to add to cart or scan barcode and press Enter
             </p>
           </div>
-          <div className="relative flex-1 sm:max-w-xs">
-            <Search className="h-4 w-4 text-slate-400 absolute left-3 top-3" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={handleSearchKeyDown}
-              placeholder="Search name, brand, or scan barcode..."
-              className="w-full rounded-lg border border-slate-300 bg-white pl-9 pr-16 py-2 text-sm focus:border-slate-900 focus:outline-none"
-            />
+          <div className="flex items-center gap-2 flex-1 sm:max-w-md justify-end">
             <button
               type="button"
-              onClick={() => setScannerOpen(true)}
-              title="Scan bottle barcode with phone camera"
-              aria-label="Scan barcode with camera"
-              className="absolute right-8 top-1.5 rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+              onClick={() => setClosingOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 shrink-0"
             >
-              <Camera className="h-4 w-4" />
+              <Clock className="h-3.5 w-3.5 text-emerald-700" />
+              Closing Summary
             </button>
-            <Barcode className="h-4 w-4 text-slate-400 absolute right-2.5 top-3 pointer-events-none" />
+            <div className="relative flex-1 sm:max-w-xs">
+              <Search className="h-4 w-4 text-slate-400 absolute left-3 top-3" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
+                placeholder="Search name, brand, or scan barcode..."
+                className="w-full rounded-lg border border-slate-300 bg-white pl-9 pr-16 py-2 text-sm focus:border-slate-900 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setScannerOpen(true)}
+                title="Scan bottle barcode with phone camera"
+                aria-label="Scan barcode with camera"
+                className="absolute right-8 top-1.5 rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+              >
+                <Camera className="h-4 w-4" />
+              </button>
+              <Barcode className="h-4 w-4 text-slate-400 absolute right-2.5 top-3 pointer-events-none" />
+            </div>
           </div>
         </div>
 
@@ -1107,18 +1119,20 @@ export function PosPage() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold uppercase text-slate-500 mb-1">
-                  Sale / Debt Note (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={saleNotes}
-                  onChange={(e) => setSaleNotes(e.target.value)}
-                  placeholder="e.g. Bought for Steve"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm"
-                />
-              </div>
+              {!(paymentMethod === 'CREDIT' || calculatedDebtAdded > 0) && (
+                <div>
+                  <label className="block text-[11px] font-semibold uppercase text-slate-500 mb-1">
+                    Sale Note (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={saleNotes}
+                    onChange={(e) => setSaleNotes(e.target.value)}
+                    placeholder="e.g. Table 4 or VIP order"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm"
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -1243,6 +1257,21 @@ export function PosPage() {
                   Simulate M-Pesa Payment Confirmation ({stkCheckoutId.slice(0, 14)}...)
                 </button>
               )}
+            </div>
+          )}
+
+          {(paymentMethod === 'CREDIT' || calculatedDebtAdded > 0) && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-2.5 space-y-1">
+              <label className="block text-[11px] font-semibold uppercase text-amber-900">
+                Debt Note (Optional — e.g. who drink was bought for)
+              </label>
+              <input
+                type="text"
+                value={saleNotes}
+                onChange={(e) => setSaleNotes(e.target.value)}
+                placeholder="e.g. This drink was bought for John"
+                className="w-full rounded-lg border border-amber-300 bg-white px-2.5 py-1.5 text-sm"
+              />
             </div>
           )}
 
@@ -1470,6 +1499,16 @@ export function PosPage() {
         open={completedSale !== null}
         onClose={() => setCompletedSale(null)}
       />
+
+      <Modal
+        open={closingOpen}
+        onClose={() => setClosingOpen(false)}
+        title="End-of-Day Closing Summary"
+        subtitle="Total sold broken down by Cash, M-Pesa, and Debt — plus drawer reconciliation"
+        maxWidth="max-w-4xl"
+      >
+        <DailyClosingPanel compact />
+      </Modal>
     </div>
   );
 }
