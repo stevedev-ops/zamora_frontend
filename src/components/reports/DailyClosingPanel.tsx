@@ -350,3 +350,4 @@ export function DailyClosingPanel({ compact = false }: { compact?: boolean }) {
     </div>
   );
 }
+

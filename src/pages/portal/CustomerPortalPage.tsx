@@ -102,6 +102,16 @@ interface PortalDashboardData {
         unitSellingPrice: number;
         lineTotal: number;
       }>;
+      shares?: Array<{
+        id: string;
+        isMine: boolean;
+        payerName: string;
+        accountNumber: string | null;
+        shareTotal: number;
+        paidAmount: number;
+        debtAmount: number;
+        notes: string | null;
+      }>;
     } | null;
     payment: {
       id: string;
@@ -803,6 +813,30 @@ export function CustomerPortalPage() {
                         </span>
                       </div>
                     </div>
+
+                    {tx.sale.shares && tx.sale.shares.length > 0 && (
+                      <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs space-y-1">
+                        <p className="font-semibold text-slate-700">
+                          Shared Bill Breakdown ({tx.sale.shares.length} People):
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {tx.sale.shares.map((sh) => (
+                            <span
+                              key={sh.id}
+                              className={`inline-flex items-center gap-1 rounded px-2 py-0.5 border ${
+                                sh.isMine
+                                  ? 'border-amber-300 bg-amber-50 text-amber-950 font-semibold'
+                                  : 'border-slate-200 bg-slate-50 text-slate-700'
+                              }`}
+                            >
+                              {sh.isMine ? 'Your share' : sh.payerName}: {formatKsh(sh.shareTotal)}
+                              {sh.paidAmount > 0 ? ` (Paid ${formatKsh(sh.paidAmount)})` : ''}
+                              {sh.debtAmount > 0 ? ` · Debt ${formatKsh(sh.debtAmount)}` : ''}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs">

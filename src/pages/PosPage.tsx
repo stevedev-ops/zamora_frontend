@@ -82,6 +82,28 @@ interface CartLine {
   quantity: number;
 }
 
+interface PosSplitShareRow {
+  id: string;
+  customerId: string;
+  payerName: string;
+  shareTotal: string;
+  cashAmount: string;
+  mpesaAmount: string;
+  notes: string;
+}
+
+function makeSplitRow(idx: number, shareTotal = '0', customerId = ''): PosSplitShareRow {
+  return {
+    id: `share-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+    customerId,
+    payerName: '',
+    shareTotal,
+    cashAmount: customerId ? '0' : shareTotal,
+    mpesaAmount: '0',
+    notes: '',
+  };
+}
+
 export function PosPage() {
   const { showToast } = useToast();
   const [products, setProducts] = useState<ProductItem[]>([]);
@@ -98,6 +120,8 @@ export function PosPage() {
   const [discountAmount, setDiscountAmount] = useState<string>('0');
   const [discountReason, setDiscountReason] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'MPESA' | 'CREDIT' | 'SPLIT'>('CASH');
+  const [splitMode, setSplitMode] = useState<'single' | 'multi'>('single');
+  const [splitShares, setSplitShares] = useState<PosSplitShareRow[]>([]);
   const [cashAmount, setCashAmount] = useState<string>('0');
   const [mpesaAmount, setMpesaAmount] = useState<string>('0');
   const [mpesaReference, setMpesaReference] = useState('');
@@ -321,32 +345,164 @@ export function PosPage() {
   const splitCash = Math.max(0, Number(cashAmount || 0));
   const splitMpesa = Math.max(0, Number(mpesaAmount || 0));
 
+  const parsedMultiShares = useMemo(() => {
+    return splitShares.map((row) => {
+      const shareTotal = Math.max(0, Number(row.shareTotal || 0));
+      const cash = Math.max(0, Number(row.cashAmount || 0));
+      const mpesa = Math.max(0, Number(row.mpesaAmount || 0));
+      const paid = cash + mpesa;
+      const overpaid = paid > shareTotal + 0.009;
+      const debt = Math.max(0, Number((shareTotal - paid).toFixed(2)));
+      return { row, shareTotal, cash, mpesa, paid, overpaid, debt };
+    });
+  }, [splitShares]);
+
+  const multiSharesTotal = useMemo(
+    () =>
+      Number(
+        parsedMultiShares.reduce((sum, s) => sum + s.shareTotal, 0).toFixed(2)
+      ),
+    [parsedMultiShares]
+  );
+  const multiSharesCash = useMemo(
+    () => Number(parsedMultiShares.reduce((sum, s) => sum + s.cash, 0).toFixed(2)),
+    [parsedMultiShares]
+  );
+  const multiSharesMpesa = useMemo(
+    () => Number(parsedMultiShares.reduce((sum, s) => sum + s.mpesa, 0).toFixed(2)),
+    [parsedMultiShares]
+  );
+  const multiSharesDebt = useMemo(
+    () => Number(parsedMultiShares.reduce((sum, s) => sum + s.debt, 0).toFixed(2)),
+    [parsedMultiShares]
+  );
+
+  const isMultiSplitActive = paymentMethod === 'SPLIT' && splitMode === 'multi';
+
+  const applyEqualMultiSplit = useCallback(
+    (count = Math.max(2, splitShares.length || 2)) => {
+      const n = Math.max(2, Math.min(10, count));
+      const each = Math.floor((totalAmount * 100) / n) / 100;
+      const last = Number((totalAmount - each * (n - 1)).toFixed(2));
+      const rows: PosSplitShareRow[] = [];
+      for (let i = 0; i < n; i += 1) {
+        const amt = (i === n - 1 ? last : each).toFixed(2);
+        const existingCustId =
+          splitShares[i]?.customerId ?? (i === 0 ? selectedCustomerId : '');
+        const prevRow = splitShares[i];
+        rows.push({
+          ...makeSplitRow(i, amt, existingCustId),
+          payerName: prevRow?.payerName ?? '',
+          notes: prevRow?.notes ?? '',
+          cashAmount: existingCustId ? '0' : amt,
+          mpesaAmount: '0',
+        });
+      }
+      setSplitShares(rows);
+    },
+    [selectedCustomerId, splitShares, totalAmount]
+  );
+
   const calculatedPaid =
     paymentMethod === 'CASH' || paymentMethod === 'MPESA'
       ? totalAmount
       : paymentMethod === 'CREDIT'
         ? 0
-        : Math.min(totalAmount, splitCash + splitMpesa);
+        : isMultiSplitActive
+          ? Math.min(totalAmount, multiSharesCash + multiSharesMpesa)
+          : Math.min(totalAmount, splitCash + splitMpesa);
 
-  const calculatedDebtAdded = Math.max(0, totalAmount - calculatedPaid);
+  const calculatedDebtAdded = isMultiSplitActive
+    ? multiSharesDebt
+    : Math.max(0, totalAmount - calculatedPaid);
 
-  const exceedsCreditLimit =
-    calculatedDebtAdded > 0 &&
-    selectedCustomer !== null &&
-    selectedCustomer.currentDebt + calculatedDebtAdded > selectedCustomer.creditLimit;
+  const creditLimitViolations = useMemo(() => {
+    if (isMultiSplitActive) {
+      const debtByCust = new Map<string, number>();
+      for (const s of parsedMultiShares) {
+        if (s.debt > 0 && s.row.customerId) {
+          debtByCust.set(
+            s.row.customerId,
+            (debtByCust.get(s.row.customerId) ?? 0) + s.debt
+          );
+        }
+      }
+      const warnings: Array<{ customer: CustomerItem; added: number }> = [];
+      debtByCust.forEach((added, cid) => {
+        const cust = customers.find((c) => c.id === cid);
+        if (cust && cust.currentDebt + added > cust.creditLimit) {
+          warnings.push({ customer: cust, added });
+        }
+      });
+      return warnings;
+    }
+    if (
+      calculatedDebtAdded > 0 &&
+      selectedCustomer !== null &&
+      selectedCustomer.currentDebt + calculatedDebtAdded > selectedCustomer.creditLimit
+    ) {
+      return [{ customer: selectedCustomer, added: calculatedDebtAdded }];
+    }
+    return [];
+  }, [
+    calculatedDebtAdded,
+    customers,
+    isMultiSplitActive,
+    parsedMultiShares,
+    selectedCustomer,
+  ]);
+
+  const exceedsCreditLimit = creditLimitViolations.length > 0;
 
   const handleCheckout = async () => {
     if (cart.length === 0) {
       showToast('Add at least one drink to the cart', 'error');
       return;
     }
-    if (calculatedDebtAdded > 0 && !selectedCustomerId) {
-      showToast('Select or register a customer for credit or partial debt sales', 'error');
-      return;
-    }
-    if (paymentMethod === 'SPLIT' && splitCash + splitMpesa > totalAmount) {
-      showToast('Split Cash + M-Pesa exceeds total sale amount', 'error');
-      return;
+
+    if (isMultiSplitActive) {
+      if (parsedMultiShares.length < 2) {
+        showToast('Add at least 2 people for Multi-Person Split', 'error');
+        return;
+      }
+      if (Math.abs(multiSharesTotal - totalAmount) > 0.01) {
+        showToast(
+          `Split shares total (${formatKsh(multiSharesTotal)}) must equal cart total (${formatKsh(
+            totalAmount
+          )})`,
+          'error'
+        );
+        return;
+      }
+      for (let idx = 0; idx < parsedMultiShares.length; idx += 1) {
+        const item = parsedMultiShares[idx];
+        if (item.shareTotal <= 0) {
+          showToast(`Person #${idx + 1} share must be greater than zero`, 'error');
+          return;
+        }
+        if (item.overpaid) {
+          showToast(`Person #${idx + 1} Cash + M-Pesa exceeds their share total`, 'error');
+          return;
+        }
+        if (item.debt > 0 && !item.row.customerId) {
+          showToast(
+            `Person #${idx + 1} has unpaid debt (${formatKsh(
+              item.debt
+            )}) — please select a registered customer`,
+            'error'
+          );
+          return;
+        }
+      }
+    } else {
+      if (calculatedDebtAdded > 0 && !selectedCustomerId) {
+        showToast('Select or register a customer for credit or partial debt sales', 'error');
+        return;
+      }
+      if (paymentMethod === 'SPLIT' && splitCash + splitMpesa > totalAmount) {
+        showToast('Split Cash + M-Pesa exceeds total sale amount', 'error');
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -358,8 +514,20 @@ export function PosPage() {
         discountReason: discountReason || undefined,
         notes: saleNotes.trim() || undefined,
         paymentMethod,
-        cashAmount: paymentMethod === 'SPLIT' ? splitCash : undefined,
-        mpesaAmount: paymentMethod === 'SPLIT' ? splitMpesa : undefined,
+        cashAmount:
+          paymentMethod === 'SPLIT' && !isMultiSplitActive ? splitCash : undefined,
+        mpesaAmount:
+          paymentMethod === 'SPLIT' && !isMultiSplitActive ? splitMpesa : undefined,
+        splitShares: isMultiSplitActive
+          ? parsedMultiShares.map((s) => ({
+              customerId: s.row.customerId || null,
+              payerName: s.row.payerName.trim() || null,
+              cashAmount: Number(s.cash.toFixed(2)),
+              mpesaAmount: Number(s.mpesa.toFixed(2)),
+              debtAmount: Number(s.debt.toFixed(2)),
+              notes: s.row.notes.trim() || null,
+            }))
+          : undefined,
         mpesaReference: mpesaReference || undefined,
         allowCreditLimitOverride: allowCreditOverride,
         idempotencyKey: generateIdempotencyKey('pos'),
@@ -372,6 +540,8 @@ export function PosPage() {
       setSaleNotes('');
       setCashAmount('0');
       setMpesaAmount('0');
+      setSplitMode('single');
+      setSplitShares([]);
       setMpesaReference('');
       setAllowCreditOverride(false);
       setStkCheckoutId(null);
@@ -1175,50 +1345,351 @@ export function PosPage() {
                       : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
                 }`}
               >
-                {m === 'CREDIT' ? 'Debt' : m}
+                {m === 'CREDIT' ? 'Debt' : m === 'SPLIT' ? 'Split / Partial' : m}
               </button>
             ))}
           </div>
 
+          {paymentMethod === 'CREDIT' && (
+            <button
+              type="button"
+              onClick={() => {
+                setPaymentMethod('SPLIT');
+                setSplitMode('single');
+              }}
+              className="w-full rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-1.5 text-[11px] font-semibold text-amber-900 hover:bg-amber-100 text-left"
+            >
+              Client paying part of this bottle now or splitting with a friend? Click to use{' '}
+              <span className="underline">Split / Partial</span> →
+            </button>
+          )}
+
           {paymentMethod === 'SPLIT' && (
-            <div className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                  Cash Paid (KSh)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={cashAmount}
-                  onChange={(e) => setCashAmount(e.target.value)}
-                  className="w-full rounded border border-slate-300 bg-white px-2.5 py-1.5 text-sm tabular-nums"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                  M-Pesa Paid (KSh)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={mpesaAmount}
-                  onChange={(e) => setMpesaAmount(e.target.value)}
-                  className="w-full rounded border border-slate-300 bg-white px-2.5 py-1.5 text-sm tabular-nums"
-                />
-              </div>
-              <div className="col-span-2 flex justify-between text-xs pt-1 border-t border-slate-200">
-                <span className="font-medium text-slate-600">Remaining Added to Debt:</span>
-                <span
-                  className={`font-bold tabular-nums ${calculatedDebtAdded > 0 ? 'text-rose-600' : 'text-emerald-700'
-                    }`}
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-3">
+              {/* Toggle: Single Client Partial Pay vs 2+ People Bill Split */}
+              <div className="grid grid-cols-2 gap-1.5 rounded-lg bg-slate-200/80 p-1">
+                <button
+                  type="button"
+                  onClick={() => setSplitMode('single')}
+                  className={`rounded-md py-1.5 text-[11px] font-bold transition-colors ${
+                    splitMode === 'single'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
                 >
-                  {formatKsh(calculatedDebtAdded)}
-                </span>
+                  1 Client (Partial + Debt)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSplitMode('multi');
+                    if (splitShares.length < 2) {
+                      applyEqualMultiSplit(2);
+                    }
+                  }}
+                  className={`rounded-md py-1.5 text-[11px] font-bold transition-colors ${
+                    splitMode === 'multi'
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  2+ People (Split Bill)
+                </button>
               </div>
+
+              {splitMode === 'single' ? (
+                <div className="space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-1.5">
+                    <span className="text-[11px] text-slate-600">
+                      Pay part now &amp; log remainder to Debt
+                    </span>
+                    <div className="flex gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCashAmount(String(Math.round(totalAmount / 2)));
+                          setMpesaAmount('0');
+                        }}
+                        className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-100"
+                      >
+                        50% Cash
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCashAmount('0');
+                          setMpesaAmount('0');
+                        }}
+                        className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-100"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Cash Paid Now (KSh)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={cashAmount}
+                        onChange={(e) => setCashAmount(e.target.value)}
+                        className="w-full rounded border border-slate-300 bg-white px-2.5 py-1.5 text-sm tabular-nums"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        M-Pesa Paid Now (KSh)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={mpesaAmount}
+                        onChange={(e) => setMpesaAmount(e.target.value)}
+                        className="w-full rounded border border-slate-300 bg-white px-2.5 py-1.5 text-sm tabular-nums"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-between text-xs pt-1.5 border-t border-slate-200">
+                    <span className="font-medium text-slate-600">
+                      Remaining Logged to Debt:
+                    </span>
+                    <span
+                      className={`font-bold tabular-nums ${
+                        calculatedDebtAdded > 0 ? 'text-rose-600' : 'text-emerald-700'
+                      }`}
+                    >
+                      {formatKsh(calculatedDebtAdded)}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => applyEqualMultiSplit(2)}
+                        className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+                      >
+                        Equal 50/50
+                      </button>
+                      {splitShares.length < 10 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const rem = Math.max(0, Number((totalAmount - multiSharesTotal).toFixed(2)));
+                            setSplitShares((prev) => [
+                              ...prev,
+                              makeSplitRow(prev.length, String(rem)),
+                            ]);
+                          }}
+                          className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-100"
+                        >
+                          + Add Person
+                        </button>
+                      )}
+                    </div>
+                    <span
+                      className={`text-[11px] font-bold tabular-nums ${
+                        Math.abs(multiSharesTotal - totalAmount) < 0.01
+                          ? 'text-emerald-700'
+                          : 'text-rose-600'
+                      }`}
+                    >
+                      {Math.abs(multiSharesTotal - totalAmount) < 0.01
+                        ? `Matched: ${formatKsh(totalAmount)}`
+                        : `Unassigned: ${formatKsh(totalAmount - multiSharesTotal)}`}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 max-h-96 overflow-y-auto pr-0.5">
+                    {parsedMultiShares.map((item, idx) => {
+                      const updateRow = (patch: Partial<PosSplitShareRow>) => {
+                        setSplitShares((prev) =>
+                          prev.map((r, rIdx) => {
+                            if (rIdx === idx) return { ...r, ...patch };
+                            // When editing Person 1's shareTotal in a 2-person split, auto-balance Person 2
+                            if (
+                              prev.length === 2 &&
+                              idx === 0 &&
+                              rIdx === 1 &&
+                              patch.shareTotal !== undefined
+                            ) {
+                              const p1 = Math.max(0, Number(patch.shareTotal || 0));
+                              const rem = Math.max(0, Number((totalAmount - p1).toFixed(2)));
+                              return {
+                                ...r,
+                                shareTotal: String(rem),
+                                cashAmount: r.customerId ? r.cashAmount : String(rem),
+                              };
+                            }
+                            return r;
+                          })
+                        );
+                      };
+
+                      return (
+                        <div
+                          key={item.row.id}
+                          className="rounded-lg border border-slate-200 bg-white p-2.5 space-y-2"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-bold uppercase text-slate-700">
+                              Person {idx + 1}
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className={`text-[11px] font-bold tabular-nums ${
+                                  item.overpaid
+                                    ? 'text-rose-600'
+                                    : item.debt > 0
+                                      ? 'text-rose-600'
+                                      : 'text-emerald-700'
+                                }`}
+                              >
+                                {item.overpaid
+                                  ? 'Paid > Share!'
+                                  : item.debt > 0
+                                    ? `Debt: ${formatKsh(item.debt)}`
+                                    : 'Paid Full'}
+                              </span>
+                              {splitShares.length > 2 && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setSplitShares((prev) => prev.filter((_, i) => i !== idx))
+                                  }
+                                  className="text-slate-400 hover:text-rose-600"
+                                  title="Remove person"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                            <select
+                              value={item.row.customerId}
+                              onChange={(e) => updateRow({ customerId: e.target.value })}
+                              className="rounded border border-slate-300 bg-white px-2 py-1 text-xs"
+                            >
+                              <option value="">Walk-in (Cash/M-Pesa only)</option>
+                              {customers.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.fullName} ({c.accountNumber})
+                                </option>
+                              ))}
+                            </select>
+                            {!item.row.customerId ? (
+                              <input
+                                type="text"
+                                value={item.row.payerName}
+                                onChange={(e) => updateRow({ payerName: e.target.value })}
+                                placeholder={`Name (optional, e.g. Mike)`}
+                                className="rounded border border-slate-300 bg-white px-2 py-1 text-xs"
+                              />
+                            ) : (
+                              <div className="flex items-center gap-1 flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateRow({
+                                      cashAmount: String(item.shareTotal),
+                                      mpesaAmount: '0',
+                                    })
+                                  }
+                                  className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800"
+                                >
+                                  All Cash
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateRow({
+                                      cashAmount: '0',
+                                      mpesaAmount: String(item.shareTotal),
+                                    })
+                                  }
+                                  className="rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-800"
+                                >
+                                  All M-Pesa
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => updateRow({ cashAmount: '0', mpesaAmount: '0' })}
+                                  className="rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-800"
+                                >
+                                  All Debt
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-1.5">
+                            <div>
+                              <label className="block text-[10px] font-semibold text-slate-500">
+                                Share (KSh)
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={item.row.shareTotal}
+                                onChange={(e) => updateRow({ shareTotal: e.target.value })}
+                                className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-semibold tabular-nums"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-semibold text-slate-500">
+                                Cash Paid
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={item.row.cashAmount}
+                                onChange={(e) => updateRow({ cashAmount: e.target.value })}
+                                className="w-full rounded border border-slate-300 px-2 py-1 text-xs tabular-nums"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-semibold text-slate-500">
+                                M-Pesa Paid
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={item.row.mpesaAmount}
+                                onChange={(e) => updateRow({ mpesaAmount: e.target.value })}
+                                className="w-full rounded border border-slate-300 px-2 py-1 text-xs tabular-nums"
+                              />
+                            </div>
+                          </div>
+
+                          <input
+                            type="text"
+                            value={item.row.notes}
+                            onChange={(e) => updateRow({ notes: e.target.value })}
+                            placeholder="Note for this person (e.g. Paid 400 cash, 200 debt for Kane)"
+                            className="w-full rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[11px]"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {(paymentMethod === 'MPESA' || (paymentMethod === 'SPLIT' && splitMpesa > 0)) && (
+          {(paymentMethod === 'MPESA' ||
+            (paymentMethod === 'SPLIT' &&
+              (isMultiSplitActive ? multiSharesMpesa > 0 : splitMpesa > 0))) && (
             <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 space-y-2">
               <div className="flex gap-2">
                 <input
@@ -1278,8 +1749,14 @@ export function PosPage() {
           {exceedsCreditLimit && (
             <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 space-y-2">
               <p className="font-semibold">
-                Warning: This credit purchase exceeds {selectedCustomer?.fullName}&apos;s credit
-                limit ({formatKsh(selectedCustomer?.creditLimit)}).
+                Warning: This credit purchase exceeds credit limit for{' '}
+                {creditLimitViolations
+                  .map(
+                    (v) =>
+                      `${v.customer.fullName} (Limit: ${formatKsh(v.customer.creditLimit)})`
+                  )
+                  .join(', ')}
+                .
               </p>
               <label className="flex items-center gap-2 font-medium cursor-pointer">
                 <input

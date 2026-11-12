@@ -27,6 +27,18 @@ export interface ReceiptSaleData {
     unitSellingPrice: number;
     lineTotal: number;
   }>;
+  shares?: Array<{
+    id: string;
+    customerId?: string | null;
+    payerName: string;
+    accountNumber?: string | null;
+    shareTotal: number;
+    cashAmount: number;
+    mpesaAmount: number;
+    paidAmount: number;
+    debtAmount: number;
+    notes?: string | null;
+  }>;
 }
 
 export function ReceiptModal({
@@ -158,6 +170,43 @@ export function ReceiptModal({
             <p className="text-xs italic text-slate-600 pt-1">Note: {sale.notes}</p>
           )}
         </div>
+
+        {sale.shares && sale.shares.length > 0 && (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+            <p className="text-xs font-bold uppercase text-slate-700">
+              Split &amp; Debt Breakdown ({sale.shares.length} People)
+            </p>
+            <div className="space-y-1.5">
+              {sale.shares.map((sh, idx) => (
+                <div
+                  key={sh.id || idx}
+                  className="rounded-md bg-white border border-slate-200 px-3 py-2 text-xs flex flex-wrap items-center justify-between gap-2"
+                >
+                  <div>
+                    <p className="font-semibold text-slate-900">
+                      {sh.payerName}
+                      {sh.accountNumber ? ` (${sh.accountNumber})` : ''}
+                    </p>
+                    {sh.notes && <p className="text-[11px] text-amber-800">{sh.notes}</p>}
+                  </div>
+                  <div className="text-right tabular-nums">
+                    <span className="text-slate-600">Share {formatKsh(sh.shareTotal)} · </span>
+                    {sh.paidAmount > 0 && (
+                      <span className="text-emerald-700 font-medium">
+                        Paid {formatKsh(sh.paidAmount)}{' '}
+                      </span>
+                    )}
+                    {sh.debtAmount > 0 && (
+                      <span className="text-rose-600 font-bold">
+                        · Debt {formatKsh(sh.debtAmount)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="no-print grid grid-cols-2 sm:flex sm:flex-wrap gap-2 pt-2">
           <button
