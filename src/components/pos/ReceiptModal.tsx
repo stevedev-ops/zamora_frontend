@@ -1,7 +1,15 @@
+import { useState } from 'react';
 import { Download, MessageCircle, Pencil, Printer, Receipt } from 'lucide-react';
 import { Modal } from '../common/Modal';
-import { downloadBinaryFile } from '../../api/client';
+import { api, downloadBinaryFile } from '../../api/client';
 import { formatDateTime, formatKsh } from '../../utils/format';
+import {
+  DrinkFlagBadge,
+  DrinkFlagButton,
+  DrinkFlagModal,
+  DrinkFlagTarget,
+} from '../common/DrinkFlagModal';
+import { useToast } from '../common/Toast';
 
 export interface ReceiptSaleData {
   id: string;
@@ -27,6 +35,10 @@ export interface ReceiptSaleData {
     quantity: number;
     unitSellingPrice: number;
     lineTotal: number;
+    isFlagged?: boolean;
+    flagNote?: string | null;
+    flaggedByType?: string | null;
+    flaggedAt?: string | null;
   }>;
   shares?: Array<{
     id: string;
@@ -48,13 +60,18 @@ export function ReceiptModal({
   onClose,
   portalSession,
   onEditSale,
+  onReceiptUpdated,
 }: {
   sale: ReceiptSaleData | null;
   open: boolean;
   onClose: () => void;
   portalSession?: string;
   onEditSale?: () => void;
+  onReceiptUpdated?: () => void;
 }) {
+  const { showToast } = useToast();
+  const [flagTarget, setFlagTarget] = useState<DrinkFlagTarget | null>(null);
+
   if (!sale) return null;
 
   const handleDownloadPdf = async () => {
@@ -62,6 +79,46 @@ export function ReceiptModal({
       ? `/portal/me/sales/${sale.id}/receipt.pdf`
       : `/sales/${sale.id}/receipt.pdf`;
     await downloadBinaryFile(path, `receipt-${sale.receiptNumber}.pdf`, portalSession);
+  };
+
+  const handleSaveDrinkFlag = async (payload: {
+    saleItemId: string;
+    isFlagged: boolean;
+    flagNote: string | null;
+  }) => {
+    try {
+      const endpoint = portalSession
+        ? `/portal/me/sale-items/${payload.saleItemId}/flag`
+        : `/sales/${sale.id}/items/${payload.saleItemId}/flag`;
+
+      await api.patch(
+        endpoint,
+        {
+          isFlagged: payload.isFlagged,
+          flagNote: payload.flagNote,
+        },
+        portalSession
+      );
+
+      const targetItem = sale.items.find((i) => i.id === payload.saleItemId);
+      if (targetItem) {
+        targetItem.isFlagged = payload.isFlagged;
+        targetItem.flagNote = payload.flagNote;
+        targetItem.flaggedByType = portalSession ? 'CUSTOMER' : 'OWNER';
+        targetItem.flaggedAt = new Date().toISOString();
+      }
+
+      showToast(
+        payload.isFlagged
+          ? 'Drink marked with * (visible on receipts and portal)'
+          : 'Asterisk (*) mark removed',
+        'success'
+      );
+      setFlagTarget(null);
+      onReceiptUpdated?.();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to update drink flag', 'error');
+    }
   };
 
   return (
@@ -108,16 +165,28 @@ export function ReceiptModal({
                 <th className="px-3 py-2 text-right">Qty</th>
                 <th className="px-3 py-2 text-right">Price</th>
                 <th className="px-3 py-2 text-right">Total</th>
+                <th className="px-2 py-2 text-center w-12">Mark</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 bg-white">
               {sale.items.map((item) => (
-                <tr key={item.id}>
+                <tr key={item.id} className={item.isFlagged ? 'bg-rose-50/50' : undefined}>
                   <td className="px-3 py-2">
-                    <p className="font-medium text-slate-900">{item.productName}</p>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {item.isFlagged && (
+                        <span
+                          className="font-extrabold text-rose-600 text-sm leading-none"
+                          title="Marked drink"
+                        >
+                          *
+                        </span>
+                      )}
+                      <p className="font-medium text-slate-900">{item.productName}</p>
+                    </div>
                     <p className="text-xs text-slate-500">
                       {item.brand} · {item.bottleSize}
                     </p>
+                    <DrinkFlagBadge item={item} />
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{item.quantity}</td>
                   <td className="px-3 py-2 text-right tabular-nums">
@@ -125,6 +194,19 @@ export function ReceiptModal({
                   </td>
                   <td className="px-3 py-2 text-right font-semibold tabular-nums">
                     {formatKsh(item.lineTotal)}
+                  </td>
+                  <td className="px-2 py-2 text-center">
+                    {sale.status !== 'VOIDED' && (
+                      <DrinkFlagButton
+                        item={item}
+                        onClick={() =>
+                          setFlagTarget({
+                            item,
+                            receiptNumber: sale.receiptNumber,
+                          })
+                        }
+                      />
+                    )}
                   </td>
                 </tr>
               ))}
@@ -293,6 +375,11 @@ export function ReceiptModal({
           )}
         </div>
       </div>
+      <DrinkFlagModal
+        target={flagTarget}
+        onClose={() => setFlagTarget(null)}
+        onSave={handleSaveDrinkFlag}
+      />
     </Modal>
   );
 }

@@ -27,6 +27,8 @@ export interface EditableItem {
   bottleSize: string;
   unitSellingPrice: number;
   quantity: number;
+  isFlagged?: boolean;
+  flagNote?: string | null;
 }
 
 export interface EditableSaleShare {
@@ -243,6 +245,8 @@ export function SaleEditorForm({
           bottleSize: it.bottleSize || matchedProduct?.bottleSize || '',
           unitSellingPrice: Number(it.unitSellingPrice),
           quantity: Number(it.quantity),
+          isFlagged: it.isFlagged,
+          flagNote: it.flagNote,
         };
       })
     );
@@ -440,13 +444,28 @@ export function SaleEditorForm({
               className="flex items-center justify-between gap-2 bg-white rounded-lg border border-slate-200 px-3 py-2"
             >
               <div className="min-w-0">
-                <p className="text-sm font-medium text-slate-900 truncate">{it.productName}</p>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {it.isFlagged && (
+                    <span
+                      className="font-extrabold text-rose-600 text-sm leading-none"
+                      title="Marked drink"
+                    >
+                      *
+                    </span>
+                  )}
+                  <p className="text-sm font-medium text-slate-900 truncate">{it.productName}</p>
+                </div>
                 <p className="text-xs text-slate-500">
                   {formatKsh(it.unitSellingPrice)} × {it.quantity} ={' '}
                   <span className="font-semibold text-slate-700">
                     {formatKsh(it.unitSellingPrice * it.quantity)}
                   </span>
                 </p>
+                {it.isFlagged && it.flagNote && (
+                  <p className="text-[11px] font-medium text-amber-800">
+                    Note: {it.flagNote}
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 <button

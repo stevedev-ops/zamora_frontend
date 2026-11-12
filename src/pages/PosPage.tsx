@@ -2062,7 +2062,14 @@ export function PosPage() {
                       </p>
                       <p className="text-xs text-slate-500">
                         {s.paymentMethod} · {formatDateTime(s.soldAt)} ·{' '}
-                        {s.items.map((i) => `${i.productName} x${i.quantity}`).join(', ')}
+                        {s.items
+                          .map(
+                            (i) =>
+                              `${(i as { isFlagged?: boolean }).isFlagged ? '* ' : ''}${
+                                i.productName
+                              } x${i.quantity}`
+                          )
+                          .join(', ')}
                       </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
