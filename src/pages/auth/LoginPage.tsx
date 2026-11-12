@@ -88,6 +88,25 @@ export function LoginPage() {
             {submitting ? 'Signing in...' : 'Sign In to Store Dashboard'}
           </button>
         </form>
+
+        <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs text-slate-600 flex items-center justify-between gap-3">
+          <div>
+            <p className="font-semibold text-slate-800">Admin Credentials</p>
+            <p className="mt-0.5 font-mono text-[11px] text-slate-700">
+              owner@zamoraliquor.com / OwnerPass123!
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setEmail('owner@zamoraliquor.com');
+              setPassword('OwnerPass123!');
+            }}
+            className="shrink-0 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 font-semibold text-slate-800 hover:bg-slate-100"
+          >
+            Fill
+          </button>
+        </div>
       </div>
     </div>
   );

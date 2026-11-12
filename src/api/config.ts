@@ -1,4 +1,5 @@
 export const OWNER_TOKEN_STORAGE_KEY = 'zamora_owner_token';
+const DEFAULT_PRODUCTION_API_URL = 'https://zamora-backend.onrender.com';
 
 function normalizeApiBase(raw?: string): string {
   const trimmed = (raw || '').trim().replace(/\/+$/, '');
@@ -6,7 +7,11 @@ function normalizeApiBase(raw?: string): string {
   return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
 }
 
-const API_BASE = normalizeApiBase(import.meta.env.VITE_API_URL);
+const configuredApiUrl =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.PROD ? DEFAULT_PRODUCTION_API_URL : '');
+
+const API_BASE = normalizeApiBase(configuredApiUrl);
 
 export function apiUrl(path: string): string {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
