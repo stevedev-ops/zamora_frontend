@@ -7,6 +7,7 @@ import {
   Boxes,
   DollarSign,
   PackagePlus,
+  Pencil,
   PlusCircle,
   Scale,
   ShoppingCart,
@@ -31,6 +32,7 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { LoadingState } from '../components/common/LoadingState';
 import { useToast } from '../components/common/Toast';
 import { ExportButtons } from '../components/common/ExportButtons';
+import { EditSaleModal } from '../components/sales/EditSaleModal';
 import { formatDateTime, formatKsh } from '../utils/format';
 
 interface DashboardResponse {
@@ -120,6 +122,7 @@ export function DashboardPage() {
   const [period, setPeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [editingSaleId, setEditingSaleId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -495,15 +498,25 @@ export function DashboardPage() {
                     {s.paymentMethod} · {s.itemCount} item(s) · {formatDateTime(s.soldAt)}
                   </p>
                 </div>
-                <div className="text-right shrink-0">
-                  <p className="font-bold tabular-nums text-slate-900">
-                    {formatKsh(s.totalAmount)}
-                  </p>
-                  {s.outstandingAmount > 0 && (
-                    <p className="text-[11px] font-semibold text-rose-600 tabular-nums">
-                      Debt +{formatKsh(s.outstandingAmount)}
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="text-right">
+                    <p className="font-bold tabular-nums text-slate-900">
+                      {formatKsh(s.totalAmount)}
                     </p>
-                  )}
+                    {s.outstandingAmount > 0 && (
+                      <p className="text-[11px] font-semibold text-rose-600 tabular-nums">
+                        Debt +{formatKsh(s.outstandingAmount)}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEditingSaleId(s.id)}
+                    className="rounded-md border border-slate-200 p-1.5 text-slate-600 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800"
+                    title="Edit or remove drinks on this receipt"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               </div>
             ))}
@@ -624,6 +637,13 @@ export function DashboardPage() {
           </div>
         </div>
       </div>
+
+      <EditSaleModal
+        open={editingSaleId !== null}
+        saleId={editingSaleId}
+        onClose={() => setEditingSaleId(null)}
+        onSuccess={load}
+      />
     </div>
   );
 }

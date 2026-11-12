@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Lock, Mail, Wine } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { PasswordInput } from '../../components/common/PasswordInput';
 import { useToast } from '../../components/common/Toast';
 
 export function LoginPage() {
@@ -67,17 +68,15 @@ export function LoginPage() {
                 Forgot password?
               </Link>
             </div>
-            <div className="relative">
-              <Lock className="h-4 w-4 text-slate-400 absolute left-3 top-3" />
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
-                className="w-full rounded-lg border border-slate-300 pl-9 pr-3 py-2.5 text-sm focus:border-slate-900 focus:outline-none"
-              />
-            </div>
+            <PasswordInput
+              leftIcon={<Lock className="h-4 w-4" />}
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter your password"
+              autoComplete="current-password"
+              className="py-2.5 text-sm focus:border-slate-900 focus:outline-none"
+            />
           </div>
 
           <button

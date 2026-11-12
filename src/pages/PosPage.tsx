@@ -10,6 +10,7 @@ import {
   Minus,
   Pencil,
   Plus,
+  Receipt,
   Search,
   ShoppingCart,
   Smartphone,
@@ -24,12 +25,15 @@ import { LoadingState } from '../components/common/LoadingState';
 import { BarcodeScannerModal } from '../components/pos/BarcodeScannerModal';
 import { ReceiptModal, ReceiptSaleData } from '../components/pos/ReceiptModal';
 import { DailyClosingPanel } from '../components/reports/DailyClosingPanel';
+import { EditSaleModal } from '../components/sales/EditSaleModal';
 import {
   CustomerDebtTabModal,
+  CustomerProfileSalesPayload,
   DebtTabSaleInput,
+  extractCustomerProfileSales,
 } from '../components/customers/CustomerDebtTabModal';
 import { cacheGet, cacheSet } from '../offline/offlineDb';
-import { formatKsh, generateIdempotencyKey } from '../utils/format';
+import { formatDateTime, formatKsh, generateIdempotencyKey } from '../utils/format';
 
 const BAR_TABS_LS_KEY = 'zamora_open_bar_tabs_v1';
 const BAR_TABS_IDB_KEY = 'LOCAL:barTabs';
@@ -149,6 +153,24 @@ export function PosPage() {
   const [selectedCustomerOpenSales, setSelectedCustomerOpenSales] = useState<DebtTabSaleInput[]>([]);
   const [debtTabModalOpen, setDebtTabModalOpen] = useState(false);
   const [updatingExistingDebt, setUpdatingExistingDebt] = useState(false);
+  const [recentSalesModalOpen, setRecentSalesModalOpen] = useState(false);
+  const [recentSalesList, setRecentSalesList] = useState<ReceiptSaleData[]>([]);
+  const [loadingRecentSales, setLoadingRecentSales] = useState(false);
+  const [recentSalesSearch, setRecentSalesSearch] = useState('');
+  const [editingPosSaleId, setEditingPosSaleId] = useState<string | null>(null);
+
+  const openRecentSalesModal = useCallback(async () => {
+    setRecentSalesModalOpen(true);
+    setLoadingRecentSales(true);
+    try {
+      const res = await api.get<{ sales: ReceiptSaleData[] }>('/sales?limit=30');
+      setRecentSalesList(res.sales || []);
+    } catch {
+      showToast('Could not load recent receipts', 'error');
+    } finally {
+      setLoadingRecentSales(false);
+    }
+  }, [showToast]);
 
   const persistOpenTabs = useCallback((nextTabs: OpenBarTab[]) => {
     setOpenTabs(nextTabs);
@@ -204,8 +226,8 @@ export function PosPage() {
         );
         sales = cached?.data?.sales || [];
       } else {
-        const res = await api.get<{ sales: DebtTabSaleInput[] }>(`/customers/${customerId}`);
-        sales = res.sales || [];
+        const res = await api.get<CustomerProfileSalesPayload>(`/customers/${customerId}`);
+        sales = extractCustomerProfileSales(res);
       }
       const unpaid = sales.filter(
         (s) => s.status !== 'VOIDED' && Number(s.outstandingAmount ?? 0) > 0
@@ -866,7 +888,16 @@ export function PosPage() {
               Tap products to add to cart or scan barcode and press Enter
             </p>
           </div>
-          <div className="flex items-center gap-2 flex-1 sm:max-w-md justify-end">
+          <div className="flex items-center gap-2 flex-1 sm:max-w-lg justify-end">
+            <button
+              type="button"
+              onClick={() => void openRecentSalesModal()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 shrink-0"
+              title="View or edit recent walk-in, split, or customer receipts"
+            >
+              <Receipt className="h-3.5 w-3.5 text-amber-600" />
+              Receipts
+            </button>
             <button
               type="button"
               onClick={() => setClosingOpen(true)}
@@ -1975,6 +2006,109 @@ export function PosPage() {
         sale={completedSale}
         open={completedSale !== null}
         onClose={() => setCompletedSale(null)}
+        onEditSale={
+          completedSale && !completedSale.id.startsWith('tmp-')
+            ? () => {
+                setEditingPosSaleId(completedSale.id);
+                setCompletedSale(null);
+              }
+            : undefined
+        }
+      />
+
+      <Modal
+        open={recentSalesModalOpen}
+        onClose={() => setRecentSalesModalOpen(false)}
+        title="Recent POS Receipts"
+        subtitle="Edit or void walk-in Cash/M-Pesa, multi-person split, or customer receipts and restore stock"
+        maxWidth="max-w-3xl"
+      >
+        <div className="space-y-3">
+          <div className="relative">
+            <Search className="h-4 w-4 text-slate-400 absolute left-3 top-2.5" />
+            <input
+              type="text"
+              value={recentSalesSearch}
+              onChange={(e) => setRecentSalesSearch(e.target.value)}
+              placeholder="Search receipt #, customer name, or drink..."
+              className="w-full rounded-lg border border-slate-300 pl-9 pr-3 py-2 text-sm focus:border-slate-900 focus:outline-none"
+            />
+          </div>
+
+          {loadingRecentSales ? (
+            <div className="py-8 text-center text-sm text-slate-500">Loading recent receipts...</div>
+          ) : (
+            <div className="max-h-96 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl">
+              {recentSalesList
+                .filter((s) => {
+                  const q = recentSalesSearch.trim().toLowerCase();
+                  if (!q) return true;
+                  return (
+                    s.receiptNumber.toLowerCase().includes(q) ||
+                    (s.customer?.fullName || 'Walk-in').toLowerCase().includes(q) ||
+                    s.items.some((i) => i.productName.toLowerCase().includes(q))
+                  );
+                })
+                .map((s) => (
+                  <div
+                    key={s.id}
+                    className="p-3 flex flex-wrap items-center justify-between gap-2 hover:bg-slate-50"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-slate-900">
+                        {s.receiptNumber} · {s.customer ? s.customer.fullName : 'Walk-in Sale'}
+                        {s.shares && s.shares.length > 1 ? ` (Split ×${s.shares.length})` : ''}
+                        {s.status === 'VOIDED' ? ' · VOIDED' : ''}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {s.paymentMethod} · {formatDateTime(s.soldAt)} ·{' '}
+                        {s.items.map((i) => `${i.productName} x${i.quantity}`).join(', ')}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-sm font-bold tabular-nums text-slate-900">
+                        {formatKsh(s.totalAmount)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRecentSalesModalOpen(false);
+                          setCompletedSale(s);
+                        }}
+                        className="rounded border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                      >
+                        Receipt
+                      </button>
+                      {s.status !== 'VOIDED' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRecentSalesModalOpen(false);
+                            setEditingPosSaleId(s.id);
+                          }}
+                          className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+                        >
+                          <Pencil className="h-3 w-3" /> Edit Drinks
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      <EditSaleModal
+        open={editingPosSaleId !== null}
+        saleId={editingPosSaleId}
+        onClose={() => setEditingPosSaleId(null)}
+        onSuccess={async () => {
+          await loadData();
+          if (selectedCustomerId) {
+            await loadCustomerOpenSales(selectedCustomerId);
+          }
+        }}
       />
 
       <Modal

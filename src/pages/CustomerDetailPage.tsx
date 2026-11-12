@@ -13,6 +13,12 @@ import {
 import { api, downloadBinaryFile } from '../api/client';
 import { StatCard } from '../components/common/StatCard';
 import { ExportButtons } from '../components/common/ExportButtons';
+import {
+  DrinkFlagBadge,
+  DrinkFlagButton,
+  DrinkFlagModal,
+  DrinkFlagTarget,
+} from '../components/common/DrinkFlagModal';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { Modal } from '../components/common/Modal';
 import { LoadingState } from '../components/common/LoadingState';
@@ -71,6 +77,10 @@ interface CustomerDetail {
       quantity: number;
       unitSellingPrice: number;
       lineTotal: number;
+      isFlagged?: boolean;
+      flagNote?: string | null;
+      flaggedByType?: string | null;
+      flaggedAt?: string | null;
     }>;
   }>;
   payments: Array<{
@@ -115,6 +125,7 @@ export function CustomerDetailPage() {
   const [tabModalOpen, setTabModalOpen] = useState(false);
   const [tabInitialMode, setTabInitialMode] = useState<'add' | 'edit'>('add');
   const [tabInitialSaleId, setTabInitialSaleId] = useState<string | null>(null);
+  const [flagTarget, setFlagTarget] = useState<DrinkFlagTarget | null>(null);
 
   const [editForm, setEditForm] = useState({
     fullName: '',
@@ -230,7 +241,42 @@ export function CustomerDetailPage() {
     }
   };
 
+  const handleSaveDrinkFlag = async (payload: {
+    saleItemId: string;
+    isFlagged: boolean;
+    flagNote: string | null;
+  }) => {
+    if (!id) return;
+    try {
+      await api.patch(`/customers/${id}/sale-items/${payload.saleItemId}/flag`, {
+        isFlagged: payload.isFlagged,
+        flagNote: payload.flagNote,
+      });
+      showToast(
+        payload.isFlagged ? 'Drink marked with * (visible to customer too)' : 'Asterisk (*) mark removed',
+        'success'
+      );
+      await loadCustomer();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not update drink mark', 'error');
+      throw err;
+    }
+  };
+
   if (loading || !customer) return <LoadingState label="Loading customer account..." />;
+
+  const flaggedDrinkIds = new Set<string>();
+  for (const s of customer.sales) {
+    for (const item of s.items) {
+      if (item.isFlagged) flaggedDrinkIds.add(item.id);
+    }
+  }
+  for (const t of customer.debtTransactions) {
+    for (const item of t.sale?.items ?? []) {
+      if (item.isFlagged && item.id) flaggedDrinkIds.add(item.id);
+    }
+  }
+  const flaggedDrinksCount = flaggedDrinkIds.size;
 
   return (
     <div className="space-y-6">
@@ -399,6 +445,24 @@ export function CustomerDetailPage() {
         ))}
       </div>
 
+      {flaggedDrinksCount > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs text-rose-900">
+          <span>
+            <strong className="text-sm leading-none">*</strong>{' '}
+            <strong>{flaggedDrinksCount}</strong> drink{flaggedDrinksCount === 1 ? '' : 's'} marked with an asterisk (*) for review.
+          </span>
+          {tab !== 'sales' && (
+            <button
+              type="button"
+              onClick={() => setTab('sales')}
+              className="font-bold text-rose-800 underline hover:text-rose-950"
+            >
+              View in Purchases &amp; Drinks
+            </button>
+          )}
+        </div>
+      )}
+
       {tab === 'ledger' && (
         <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
           <table className="w-full text-sm">
@@ -431,17 +495,60 @@ export function CustomerDetailPage() {
                       <span className="text-xs font-semibold text-amber-700">(Reversed)</span>
                     )}
                     {t.sale && t.sale.status !== 'VOIDED' && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTabInitialMode('edit');
-                          setTabInitialSaleId(t.sale!.id);
-                          setTabModalOpen(true);
-                        }}
-                        className="mt-1 inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 hover:bg-amber-100"
-                      >
-                        <Pencil className="h-3 w-3" /> Edit / Remove Drinks
-                      </button>
+                      <div className="mt-1.5 space-y-1">
+                        {t.sale.items.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {t.sale.items
+                              .filter((item) => Boolean(item.id))
+                              .map((item) => (
+                                <button
+                                  key={item.id}
+                                  type="button"
+                                  onClick={() =>
+                                    setFlagTarget({
+                                      item: {
+                                        ...item,
+                                        id: item.id!,
+                                      },
+                                      receiptNumber: t.sale!.receiptNumber,
+                                    })
+                                  }
+                                  title={
+                                    item.isFlagged
+                                      ? `Marked by ${item.flaggedByType === 'CUSTOMER' ? 'Customer' : 'Shop Owner'}${
+                                          item.flagNote ? `: ${item.flagNote}` : ''
+                                        }`
+                                      : 'Put an asterisk (*) mark on this drink'
+                                  }
+                                  className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                                    item.isFlagged
+                                      ? 'border-rose-300 bg-rose-50 text-rose-800 font-semibold'
+                                      : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-amber-300 hover:bg-amber-50'
+                                  }`}
+                                >
+                                  <span className="font-bold">*</span>
+                                  <span>
+                                    {item.productName} ×{item.quantity}
+                                  </span>
+                                  {item.isFlagged && item.flagNote ? (
+                                    <span className="text-amber-800">({item.flagNote})</span>
+                                  ) : null}
+                                </button>
+                              ))}
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTabInitialMode('edit');
+                            setTabInitialSaleId(t.sale!.id);
+                            setTabModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 hover:bg-amber-100"
+                        >
+                          <Pencil className="h-3 w-3" /> Edit / Remove Drinks
+                        </button>
+                      </div>
                     )}
                   </td>
                   <td
@@ -527,13 +634,25 @@ export function CustomerDetailPage() {
                     <th className="py-1 text-right">Qty</th>
                     <th className="py-1 text-right">Unit Price</th>
                     <th className="py-1 text-right">Total</th>
+                    <th className="py-1 text-right">Mark (*)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {s.items.map((item) => (
-                    <tr key={item.id}>
+                    <tr key={item.id} className={item.isFlagged ? 'bg-rose-50/60' : ''}>
                       <td className="py-1.5 font-medium text-slate-900">
-                        {item.productName} ({item.brand}, {item.bottleSize})
+                        <div>
+                          {item.isFlagged && (
+                            <span
+                              className="mr-1 font-extrabold text-rose-600"
+                              title="Marked drink"
+                            >
+                              *
+                            </span>
+                          )}
+                          {item.productName} ({item.brand}, {item.bottleSize})
+                        </div>
+                        <DrinkFlagBadge item={item} />
                       </td>
                       <td className="py-1.5 text-right tabular-nums">{item.quantity}</td>
                       <td className="py-1.5 text-right tabular-nums">
@@ -541,6 +660,19 @@ export function CustomerDetailPage() {
                       </td>
                       <td className="py-1.5 text-right font-semibold tabular-nums">
                         {formatKsh(item.lineTotal)}
+                      </td>
+                      <td className="py-1.5 text-right">
+                        {s.status !== 'VOIDED' && (
+                          <DrinkFlagButton
+                            item={item}
+                            onClick={() =>
+                              setFlagTarget({
+                                item,
+                                receiptNumber: s.receiptNumber,
+                              })
+                            }
+                          />
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -866,6 +998,11 @@ export function CustomerDetailPage() {
           </div>
         </div>
       </Modal>
+      <DrinkFlagModal
+        target={flagTarget}
+        onClose={() => setFlagTarget(null)}
+        onSave={handleSaveDrinkFlag}
+      />
     </div>
   );
 }

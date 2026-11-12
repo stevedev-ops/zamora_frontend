@@ -1,4 +1,4 @@
-import { Download, MessageCircle, Printer, Receipt } from 'lucide-react';
+import { Download, MessageCircle, Pencil, Printer, Receipt } from 'lucide-react';
 import { Modal } from '../common/Modal';
 import { downloadBinaryFile } from '../../api/client';
 import { formatDateTime, formatKsh } from '../../utils/format';
@@ -7,6 +7,7 @@ export interface ReceiptSaleData {
   id: string;
   receiptNumber: string;
   soldAt: string;
+  status?: string;
   paymentMethod: string;
   mpesaReference?: string | null;
   notes?: string | null;
@@ -46,11 +47,13 @@ export function ReceiptModal({
   open,
   onClose,
   portalSession,
+  onEditSale,
 }: {
   sale: ReceiptSaleData | null;
   open: boolean;
   onClose: () => void;
   portalSession?: string;
+  onEditSale?: () => void;
 }) {
   if (!sale) return null;
 
@@ -278,6 +281,16 @@ export function ReceiptModal({
             <Download className="h-4 w-4" />
             PDF
           </button>
+          {onEditSale && !portalSession && sale.status !== 'VOIDED' && (
+            <button
+              type="button"
+              onClick={onEditSale}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+            >
+              <Pencil className="h-4 w-4" />
+              Edit Drinks
+            </button>
+          )}
         </div>
       </div>
     </Modal>

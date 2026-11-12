@@ -16,6 +16,12 @@ import { StatCard } from '../../components/common/StatCard';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { Modal } from '../../components/common/Modal';
 import { LoadingState } from '../../components/common/LoadingState';
+import {
+  DrinkFlagBadge,
+  DrinkFlagButton,
+  DrinkFlagModal,
+  DrinkFlagTarget,
+} from '../../components/common/DrinkFlagModal';
 import { ReceiptModal, ReceiptSaleData } from '../../components/pos/ReceiptModal';
 import { useToast } from '../../components/common/Toast';
 import { formatDateTime, formatKsh } from '../../utils/format';
@@ -101,6 +107,10 @@ interface PortalDashboardData {
         quantity: number;
         unitSellingPrice: number;
         lineTotal: number;
+        isFlagged?: boolean;
+        flagNote?: string | null;
+        flaggedByType?: string | null;
+        flaggedAt?: string | null;
       }>;
       shares?: Array<{
         id: string;
@@ -152,6 +162,7 @@ export function CustomerPortalPage() {
     label: string;
   } | null>(null);
   const [clarifyMsg, setClarifyMsg] = useState('');
+  const [flagTarget, setFlagTarget] = useState<DrinkFlagTarget | null>(null);
 
   const [mpesaOpen, setMpesaOpen] = useState(false);
   const [mpesaPhone, setMpesaPhone] = useState('');
@@ -303,6 +314,31 @@ export function CustomerPortalPage() {
       await loadDashboard(portalSession);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Could not submit request', 'error');
+    }
+  };
+
+  const handleSaveDrinkFlag = async (payload: {
+    saleItemId: string;
+    isFlagged: boolean;
+    flagNote: string | null;
+  }) => {
+    if (!portalSession) return;
+    try {
+      await api.patch(
+        `/portal/me/sale-items/${payload.saleItemId}/flag`,
+        { isFlagged: payload.isFlagged, flagNote: payload.flagNote },
+        portalSession
+      );
+      showToast(
+        payload.isFlagged
+          ? 'Drink marked with * (the shop owner can see this too)'
+          : 'Asterisk (*) mark removed',
+        'success'
+      );
+      await loadDashboard(portalSession);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not update drink mark', 'error');
+      throw err;
     }
   };
 
@@ -652,7 +688,14 @@ export function CustomerPortalPage() {
         {(() => {
           const drinkTotals = new Map<
             string,
-            { productName: string; brand: string; bottleSize: string; quantity: number; total: number }
+            {
+              productName: string;
+              brand: string;
+              bottleSize: string;
+              quantity: number;
+              total: number;
+              flaggedCount: number;
+            }
           >();
           for (const tx of dashboard.transactions) {
             if (!tx.sale) continue;
@@ -662,6 +705,7 @@ export function CustomerPortalPage() {
               if (prev) {
                 prev.quantity += Number(item.quantity);
                 prev.total += Number(item.lineTotal);
+                if (item.isFlagged) prev.flaggedCount += 1;
               } else {
                 drinkTotals.set(key, {
                   productName: item.productName,
@@ -669,6 +713,7 @@ export function CustomerPortalPage() {
                   bottleSize: item.bottleSize,
                   quantity: Number(item.quantity),
                   total: Number(item.lineTotal),
+                  flaggedCount: item.isFlagged ? 1 : 0,
                 });
               }
             }
@@ -677,24 +722,35 @@ export function CustomerPortalPage() {
           if (summaryDrinks.length === 0) return null;
           return (
             <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
                   <Wine className="h-4 w-4 text-emerald-600" />
                   Drinks on Your Account ({summaryDrinks.reduce((s, d) => s + d.quantity, 0)} bottles/items)
                 </h2>
+                <span className="text-[11px] text-slate-500">
+                  Notice a mistake? Click <strong>* Mark</strong> on any drink below.
+                </span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                 {summaryDrinks.map((d) => (
                   <div
                     key={`${d.productName}-${d.bottleSize}`}
-                    className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 flex items-center justify-between gap-2"
+                    className={`rounded-lg border px-3 py-2.5 flex items-center justify-between gap-2 ${
+                      d.flaggedCount > 0
+                        ? 'border-rose-300 bg-rose-50/70'
+                        : 'border-slate-200 bg-slate-50'
+                    }`}
                   >
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-slate-900 truncate">
+                        {d.flaggedCount > 0 && (
+                          <span className="mr-1 font-extrabold text-rose-600">*</span>
+                        )}
                         {d.productName}
                       </p>
                       <p className="text-[11px] text-slate-500 truncate">
                         {d.brand} · {d.bottleSize}
+                        {d.flaggedCount > 0 ? ` · ${d.flaggedCount} marked *` : ''}
                       </p>
                     </div>
                     <div className="text-right shrink-0">
@@ -847,13 +903,28 @@ export function CustomerPortalPage() {
                             <th className="py-1.5 text-right">Qty</th>
                             <th className="py-1.5 text-right">Unit Price</th>
                             <th className="py-1.5 text-right">Total</th>
+                            <th className="py-1.5 text-right">Mark (*)</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200">
                           {tx.sale.items.map((item) => (
-                            <tr key={item.id}>
+                            <tr
+                              key={item.id}
+                              className={item.isFlagged ? 'bg-rose-50/70' : ''}
+                            >
                               <td className="py-1.5 font-semibold text-slate-900">
-                                {item.productName}
+                                <div>
+                                  {item.isFlagged && (
+                                    <span
+                                      className="mr-1 font-extrabold text-rose-600"
+                                      title="Marked drink"
+                                    >
+                                      *
+                                    </span>
+                                  )}
+                                  {item.productName}
+                                </div>
+                                <DrinkFlagBadge item={item} />
                               </td>
                               <td className="py-1.5 text-slate-600">
                                 {item.brand} · {item.bottleSize}
@@ -864,6 +935,17 @@ export function CustomerPortalPage() {
                               </td>
                               <td className="py-1.5 text-right font-semibold tabular-nums">
                                 {formatKsh(item.lineTotal)}
+                              </td>
+                              <td className="py-1.5 text-right">
+                                <DrinkFlagButton
+                                  item={item}
+                                  onClick={() =>
+                                    setFlagTarget({
+                                      item,
+                                      receiptNumber: tx.sale!.receiptNumber,
+                                    })
+                                  }
+                                />
                               </td>
                             </tr>
                           ))}
@@ -1010,6 +1092,11 @@ export function CustomerPortalPage() {
           )}
         </form>
       </Modal>
+      <DrinkFlagModal
+        target={flagTarget}
+        onClose={() => setFlagTarget(null)}
+        onSave={handleSaveDrinkFlag}
+      />
     </div>
   );
 }

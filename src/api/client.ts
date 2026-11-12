@@ -162,10 +162,11 @@ export const api = {
       body: body !== undefined ? JSON.stringify(body) : undefined,
       portalSession,
     }),
-  patch: <T>(path: string, body?: unknown) =>
+  patch: <T>(path: string, body?: unknown, portalSession?: string) =>
     apiRequest<T>(path, {
       method: 'PATCH',
       body: body !== undefined ? JSON.stringify(body) : undefined,
+      portalSession,
     }),
   delete: <T>(path: string) => apiRequest<T>(path, { method: 'DELETE' }),
 };

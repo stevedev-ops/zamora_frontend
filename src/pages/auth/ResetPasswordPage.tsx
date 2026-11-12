@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../../api/client';
+import { PasswordInput } from '../../components/common/PasswordInput';
 import { useToast } from '../../components/common/Toast';
 
 export function ResetPasswordPage() {
@@ -55,26 +56,26 @@ export function ResetPasswordPage() {
             <label className="block text-xs font-semibold uppercase text-slate-600 mb-1.5">
               New Password
             </label>
-            <input
-              type="password"
+            <PasswordInput
               required
               minLength={8}
+              autoComplete="new-password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"
+              className="py-2.5 text-sm"
             />
           </div>
           <div>
             <label className="block text-xs font-semibold uppercase text-slate-600 mb-1.5">
               Confirm Password
             </label>
-            <input
-              type="password"
+            <PasswordInput
               required
               minLength={8}
+              autoComplete="new-password"
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"
+              className="py-2.5 text-sm"
             />
           </div>
           <button

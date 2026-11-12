@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Banknote, Calendar, CreditCard, RefreshCw, Smartphone, Wallet } from 'lucide-react';
+import { Banknote, Calendar, CreditCard, Pencil, RefreshCw, Smartphone, Wallet } from 'lucide-react';
 import { api } from '../../api/client';
 import { ExportButtons } from '../common/ExportButtons';
 import { LoadingState } from '../common/LoadingState';
 import { StatusBadge } from '../common/StatusBadge';
+import { EditSaleModal } from '../sales/EditSaleModal';
 import { useToast } from '../common/Toast';
 import { buildExportQuery } from '../../utils/export';
 import { formatDateTime, formatKsh } from '../../utils/format';
@@ -94,6 +95,7 @@ export function DailyClosingPanel({ compact = false }: { compact?: boolean }) {
   const [data, setData] = useState<DailyClosingSummaryData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [editingSaleId, setEditingSaleId] = useState<string | null>(null);
 
   const tzOffsetMinutes = new Date().getTimezoneOffset();
 
@@ -290,6 +292,7 @@ export function DailyClosingPanel({ compact = false }: { compact?: boolean }) {
                       <th className="px-3 py-2 text-right">M-Pesa</th>
                       <th className="px-3 py-2 text-right">Debt</th>
                       <th className="px-3 py-2 text-right">Total</th>
+                      <th className="px-3 py-2 text-right">Edit</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -338,6 +341,16 @@ export function DailyClosingPanel({ compact = false }: { compact?: boolean }) {
                         <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-900">
                           {formatKsh(s.totalAmount)}
                         </td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => setEditingSaleId(s.id)}
+                            className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-100"
+                            title="Edit or remove drinks on this receipt"
+                          >
+                            <Pencil className="h-3 w-3" /> Edit
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -347,6 +360,13 @@ export function DailyClosingPanel({ compact = false }: { compact?: boolean }) {
           </div>
         </>
       )}
+
+      <EditSaleModal
+        open={editingSaleId !== null}
+        saleId={editingSaleId}
+        onClose={() => setEditingSaleId(null)}
+        onSuccess={() => loadClosing(true)}
+      />
     </div>
   );
 }

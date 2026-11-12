@@ -162,6 +162,21 @@ async function updateAllCachedCustomers(
   }
 }
 
+function getProfileRecord(raw: Record<string, unknown>): Record<string, unknown> {
+  return raw.customer && typeof raw.customer === 'object'
+    ? (raw.customer as Record<string, unknown>)
+    : raw;
+}
+
+function withUpdatedProfileRecord(
+  raw: Record<string, unknown>,
+  nextRecord: Record<string, unknown>
+): Record<string, unknown> {
+  return raw.customer && typeof raw.customer === 'object'
+    ? { ...raw, customer: nextRecord }
+    : nextRecord;
+}
+
 async function updateCachedCustomerDebt(
   customerId: string,
   deltaDebt: number,
@@ -187,13 +202,16 @@ async function updateCachedCustomerDebt(
         await cacheSet(entry.key, { ...payload, customers: nextList });
       }
     } else if (entry.key === `GET:/customers/${customerId}`) {
-      const profile = entry.data as Record<string, unknown> | null;
-      if (profile && typeof profile === 'object') {
+      const rawProfile = entry.data as Record<string, unknown> | null;
+      if (rawProfile && typeof rawProfile === 'object') {
+        const profile = getProfileRecord(rawProfile);
         const account = (profile.account as Record<string, unknown>) || {};
         const nextDebt = Math.max(0, Number(account.currentBalance || 0) + deltaDebt);
         latestBalance = nextDebt;
-        const existingSales = Array.isArray(profile.sales) ? (profile.sales as Array<Record<string, unknown>>) : [];
-        await cacheSet(entry.key, {
+        const existingSales = Array.isArray(profile.sales)
+          ? (profile.sales as Array<Record<string, unknown>>)
+          : [];
+        const nextProfile = {
           ...profile,
           account: {
             ...account,
@@ -203,7 +221,8 @@ async function updateCachedCustomerDebt(
             lastTransactionAt: new Date().toISOString(),
           },
           sales: extra?.newSale ? [extra.newSale, ...existingSales] : existingSales,
-        });
+        };
+        await cacheSet(entry.key, withUpdatedProfileRecord(rawProfile, nextProfile));
       }
     }
   }
@@ -456,34 +475,77 @@ export async function queueOfflineMutation<T>(
       ? (rawBody.items as Array<{ productId: string; quantity: number }>)
       : [];
 
-    // Inspect cached customer profiles to calculate exact stock & debt delta offline
-    let matchedCustomerId: string | null = null;
-    let oldSaleTotal = 0;
-    const oldQtyByProd = new Map<string, number>();
-    const allCaches = await cacheGetAll();
-    for (const entry of allCaches) {
-      if (!entry.key.startsWith('GET:/customers/')) continue;
-      const profile = entry.data as {
+    type CachedSaleShape = {
+      id: string;
+      customerId?: string | null;
+      totalAmount?: number;
+      cashAmount?: number;
+      mpesaAmount?: number;
+      amountPaid?: number;
+      outstandingAmount?: number;
+      paymentMethod?: string;
+      mpesaReference?: string | null;
+      notes?: string | null;
+      items?: Array<{ productId?: string; quantity?: number }>;
+      shares?: Array<{
         id?: string;
-        sales?: Array<{
-          id: string;
-          totalAmount?: number;
-          items?: Array<{ productId?: string; quantity?: number }>;
-        }>;
-      } | null;
-      const foundSale = profile?.sales?.find((s) => s.id === saleId);
-      if (foundSale) {
-        matchedCustomerId = profile?.id || entry.key.replace('GET:/customers/', '');
-        oldSaleTotal = Number(foundSale.totalAmount || 0);
-        for (const oldIt of foundSale.items || []) {
-          if (oldIt.productId) {
-            oldQtyByProd.set(
-              oldIt.productId,
-              (oldQtyByProd.get(oldIt.productId) || 0) + Number(oldIt.quantity || 0)
-            );
-          }
+        customerId?: string | null;
+        payerName?: string | null;
+        cashAmount?: number;
+        mpesaAmount?: number;
+        paidAmount?: number;
+        debtAmount?: number;
+        shareTotal?: number;
+        notes?: string | null;
+      }>;
+    };
+
+    let foundSale: CachedSaleShape | null = null;
+    let matchedCustomerId: string | null = null;
+    const allCaches = await cacheGetAll();
+
+    // 1. Inspect cached sales lists, single-sale caches, and wrapped/unwrapped customer profiles
+    for (const entry of allCaches) {
+      if (entry.key === `GET:/sales/${saleId}`) {
+        const wrapped = entry.data as { sale?: CachedSaleShape } | CachedSaleShape | null;
+        const s = wrapped && 'sale' in wrapped ? wrapped.sale : (wrapped as CachedSaleShape | null);
+        if (s && s.id === saleId) {
+          foundSale = s;
+          matchedCustomerId = s.customerId ?? null;
+          break;
         }
-        break;
+      } else if (entry.key === 'GET:/sales' || entry.key.startsWith('GET:/sales?')) {
+        const list = (entry.data as { sales?: CachedSaleShape[] } | null)?.sales;
+        const s = list?.find((row) => row.id === saleId);
+        if (s) {
+          foundSale = s;
+          matchedCustomerId = s.customerId ?? null;
+          break;
+        }
+      } else if (entry.key.startsWith('GET:/customers/')) {
+        const raw = entry.data as Record<string, unknown> | null;
+        if (!raw || typeof raw !== 'object') continue;
+        const profile = getProfileRecord(raw);
+        const profileSales = Array.isArray(profile.sales) ? (profile.sales as CachedSaleShape[]) : [];
+        const s = profileSales.find((row) => row.id === saleId);
+        if (s) {
+          foundSale = s;
+          matchedCustomerId =
+            s.customerId ??
+            (typeof profile.id === 'string' ? profile.id : null) ??
+            entry.key.replace('GET:/customers/', '');
+          break;
+        }
+      }
+    }
+
+    const oldQtyByProd = new Map<string, number>();
+    for (const oldIt of foundSale?.items || []) {
+      if (oldIt.productId) {
+        oldQtyByProd.set(
+          oldIt.productId,
+          (oldQtyByProd.get(oldIt.productId) || 0) + Number(oldIt.quantity || 0)
+        );
       }
     }
 
@@ -517,54 +579,216 @@ export async function queueOfflineMutation<T>(
         lineTotal: price * Number(it.quantity || 0),
       };
     });
-    const subtotal = items.reduce((s, it) => s + it.lineTotal, 0);
-    const discountAmount = Number(rawBody.discountAmount || 0);
-    const totalAmount = Math.max(0, subtotal - discountAmount);
-    const debtDelta = matchedCustomerId ? totalAmount - oldSaleTotal : 0;
 
+    const isVoided = items.length === 0;
+    const subtotal = items.reduce((s, it) => s + it.lineTotal, 0);
+    const discountAmount = isVoided ? 0 : Number(rawBody.discountAmount || 0);
+    const totalAmount = Math.max(0, Math.round((subtotal - discountAmount) * 100) / 100);
+
+    const oldSaleTotal = Number(foundSale?.totalAmount || 0);
+    const oldCash = Number(foundSale?.cashAmount ?? 0);
+    const oldMpesa = Number(foundSale?.mpesaAmount ?? 0);
+    const oldPaid = Number(foundSale?.amountPaid ?? oldCash + oldMpesa);
+    const oldOutstanding = Number(foundSale?.outstandingAmount ?? Math.max(0, oldSaleTotal - oldPaid));
+    const oldShares = foundSale?.shares || [];
+    const oldPaymentMethod = String(foundSale?.paymentMethod || (matchedCustomerId ? 'CREDIT' : 'CASH'));
+
+    let cashAmount = 0;
+    let mpesaAmount = 0;
+    let amountPaid = 0;
+    let outstandingAmount = 0;
+    let paymentMethod = oldPaymentMethod;
+    let nextShares = oldShares;
     let updatedCustomerBal: number | undefined;
-    if (matchedCustomerId) {
-      if (debtDelta !== 0) {
-        updatedCustomerBal = await updateCachedCustomerDebt(matchedCustomerId, debtDelta, {
-          purchaseDelta: debtDelta,
-        });
-        await patchCachedDashboard({ salesToday: debtDelta, debtDelta });
+
+    const rawSplitShares = Array.isArray(rawBody.splitShares)
+      ? (rawBody.splitShares as Array<{
+          customerId?: string | null;
+          payerName?: string | null;
+          cashAmount?: number;
+          mpesaAmount?: number;
+          debtAmount?: number;
+          notes?: string | null;
+        }>)
+      : null;
+
+    if (oldShares.length > 1 || (rawSplitShares && rawSplitShares.length >= 2)) {
+      const oldByCust = new Map<string, { debt: number; paid: number; total: number }>();
+      for (const sh of oldShares) {
+        if (!sh.customerId) continue;
+        const cur = oldByCust.get(sh.customerId) || { debt: 0, paid: 0, total: 0 };
+        cur.debt += Number(sh.debtAmount || 0);
+        cur.paid += Number(sh.paidAmount || 0);
+        cur.total += Number(sh.shareTotal || 0);
+        oldByCust.set(sh.customerId, cur);
       }
-      const profileKey = `GET:/customers/${matchedCustomerId}`;
-      const cachedProfile = await cacheGet<Record<string, unknown>>(profileKey);
-      if (
-        cachedProfile?.data &&
-        Array.isArray((cachedProfile.data as { sales?: unknown[] }).sales)
-      ) {
-        const prevSales = (cachedProfile.data as { sales: Array<Record<string, unknown>> }).sales;
-        const nextSales = prevSales.map((s) => {
-          if (s.id !== saleId) return s;
-          const prevPaid = Number(s.amountPaid || 0);
+
+      const newByCust = new Map<string, { debt: number; paid: number; total: number }>();
+      if (isVoided) {
+        nextShares = oldShares.map((sh) => ({
+          ...sh,
+          cashAmount: 0,
+          mpesaAmount: 0,
+          paidAmount: 0,
+          debtAmount: 0,
+          shareTotal: 0,
+        }));
+      } else if (rawSplitShares) {
+        paymentMethod = 'SPLIT';
+        nextShares = rawSplitShares.map((sh, idx) => {
+          const c = Number(sh.cashAmount || 0);
+          const m = Number(sh.mpesaAmount || 0);
+          const d = Number(sh.debtAmount || 0);
+          const paid = c + m;
+          const total = paid + d;
+          cashAmount += c;
+          mpesaAmount += m;
+          outstandingAmount += d;
+          if (sh.customerId) {
+            const cur = newByCust.get(sh.customerId) || { debt: 0, paid: 0, total: 0 };
+            cur.debt += d;
+            cur.paid += paid;
+            cur.total += total;
+            newByCust.set(sh.customerId, cur);
+          }
           return {
+            id: generateOfflineId('tmp-share'),
+            customerId: sh.customerId ?? null,
+            payerName: sh.payerName || `Person ${idx + 1}`,
+            cashAmount: c,
+            mpesaAmount: m,
+            paidAmount: paid,
+            debtAmount: d,
+            shareTotal: total,
+            notes: sh.notes ?? null,
+          };
+        });
+        amountPaid = cashAmount + mpesaAmount;
+      }
+
+      const custIds = new Set([...oldByCust.keys(), ...newByCust.keys()]);
+      for (const cid of custIds) {
+        const prev = oldByCust.get(cid) || { debt: 0, paid: 0, total: 0 };
+        const next = newByCust.get(cid) || { debt: 0, paid: 0, total: 0 };
+        const debtDelta = next.debt - prev.debt;
+        const purchaseDelta = next.total - prev.total;
+        const paymentDelta = next.paid - prev.paid;
+        if (debtDelta !== 0 || purchaseDelta !== 0 || paymentDelta !== 0) {
+          const bal = await updateCachedCustomerDebt(cid, debtDelta, {
+            purchaseDelta,
+            paymentDelta,
+          });
+          if (cid === matchedCustomerId || updatedCustomerBal === undefined) {
+            updatedCustomerBal = bal;
+          }
+        }
+      }
+      await patchCachedDashboard({
+        salesToday: totalAmount - oldSaleTotal,
+        debtDelta: outstandingAmount - oldOutstanding,
+        paymentsDelta: amountPaid - oldPaid,
+      });
+    } else {
+      if (!isVoided) {
+        const hasExplicit = rawBody.cashAmount !== undefined || rawBody.mpesaAmount !== undefined;
+        if (hasExplicit) {
+          cashAmount = Math.max(0, Number(rawBody.cashAmount ?? 0));
+          mpesaAmount = Math.max(0, Number(rawBody.mpesaAmount ?? 0));
+        } else if (!matchedCustomerId) {
+          if (oldPaymentMethod === 'MPESA' || (oldMpesa > 0 && oldCash === 0)) {
+            mpesaAmount = totalAmount;
+          } else if (oldPaymentMethod === 'CASH' || (oldCash > 0 && oldMpesa === 0) || oldPaid <= 0) {
+            cashAmount = totalAmount;
+          } else {
+            cashAmount = Math.round(((totalAmount * oldCash) / oldPaid) * 100) / 100;
+            mpesaAmount = Math.round((totalAmount - cashAmount) * 100) / 100;
+          }
+        } else if (totalAmount >= oldPaid) {
+          cashAmount = oldCash;
+          mpesaAmount = oldMpesa;
+        } else if (oldPaid > 0) {
+          cashAmount = Math.round(((totalAmount * oldCash) / oldPaid) * 100) / 100;
+          mpesaAmount = Math.round((totalAmount - cashAmount) * 100) / 100;
+        }
+        amountPaid = Math.round((cashAmount + mpesaAmount) * 100) / 100;
+        outstandingAmount = Math.max(0, Math.round((totalAmount - amountPaid) * 100) / 100);
+        if (totalAmount > 0) {
+          if (outstandingAmount === totalAmount) paymentMethod = 'CREDIT';
+          else if (cashAmount === totalAmount) paymentMethod = 'CASH';
+          else if (mpesaAmount === totalAmount) paymentMethod = 'MPESA';
+          else paymentMethod = 'SPLIT';
+        }
+      }
+
+      const debtDelta = matchedCustomerId ? outstandingAmount - oldOutstanding : 0;
+      if (matchedCustomerId) {
+        updatedCustomerBal = await updateCachedCustomerDebt(matchedCustomerId, debtDelta, {
+          purchaseDelta: totalAmount - oldSaleTotal,
+          paymentDelta: amountPaid - oldPaid,
+        });
+      }
+      await patchCachedDashboard({
+        salesToday: totalAmount - oldSaleTotal,
+        debtDelta,
+        paymentsDelta: amountPaid - oldPaid,
+      });
+    }
+
+    const patchSaleRecord = (s: Record<string, unknown>) =>
+      s.id !== saleId
+        ? s
+        : {
             ...s,
-            status: items.length === 0 ? 'VOIDED' : 'COMPLETED',
+            status: isVoided ? 'VOIDED' : 'COMPLETED',
             subtotal,
             discountAmount,
             totalAmount,
-            outstandingAmount: Math.max(0, totalAmount - prevPaid),
-            notes: (rawBody.notes as string) ?? s.notes ?? null,
+            cashAmount,
+            mpesaAmount,
+            amountPaid,
+            outstandingAmount,
+            paymentMethod,
+            mpesaReference:
+              rawBody.mpesaReference !== undefined
+                ? ((rawBody.mpesaReference as string | null) ?? null)
+                : s.mpesaReference ?? null,
+            notes: rawBody.notes !== undefined ? ((rawBody.notes as string | null) ?? null) : s.notes ?? null,
             items,
+            shares: nextShares,
             _offlinePending: true,
           };
-        });
-        await cacheSet(profileKey, { ...cachedProfile.data, sales: nextSales });
+
+    for (const entry of allCaches) {
+      if (entry.key === `GET:/sales/${saleId}`) {
+        const data = entry.data as Record<string, unknown> | null;
+        if (data && typeof data === 'object') {
+          if ('sale' in data && data.sale && typeof data.sale === 'object') {
+            await cacheSet(entry.key, {
+              ...data,
+              sale: patchSaleRecord(data.sale as Record<string, unknown>),
+            });
+          } else {
+            await cacheSet(entry.key, patchSaleRecord(data));
+          }
+        }
+      } else if (entry.key === 'GET:/sales' || entry.key.startsWith('GET:/sales?')) {
+        const data = entry.data as { sales?: Array<Record<string, unknown>> } | null;
+        if (Array.isArray(data?.sales)) {
+          await cacheSet(entry.key, { ...data, sales: data.sales.map(patchSaleRecord) });
+        }
+      } else if (entry.key.startsWith('GET:/customers/')) {
+        const raw = entry.data as Record<string, unknown> | null;
+        if (!raw || typeof raw !== 'object') continue;
+        const profile = getProfileRecord(raw);
+        if (Array.isArray(profile.sales)) {
+          const nextSales = (profile.sales as Array<Record<string, unknown>>).map(patchSaleRecord);
+          await cacheSet(entry.key, withUpdatedProfileRecord(raw, { ...profile, sales: nextSales }));
+        }
       }
     }
 
     optimisticResponse = {
-      sale: {
-        id: saleId,
-        status: items.length === 0 ? 'VOIDED' : 'COMPLETED',
-        totalAmount,
-        notes: (rawBody.notes as string) ?? null,
-        items,
-        _offlinePending: true,
-      },
+      sale: patchSaleRecord((foundSale as Record<string, unknown>) || { id: saleId }),
       newCustomerBalance: updatedCustomerBal,
       offlineQueued: true,
     };

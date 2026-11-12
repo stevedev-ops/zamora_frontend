@@ -1,9 +1,11 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Database, KeyRound, Save } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AlertTriangle, Database, KeyRound, Save, Upload } from 'lucide-react';
 import { api, downloadBinaryFile } from '../api/client';
 import { ExportButtons } from '../components/common/ExportButtons';
+import { Modal } from '../components/common/Modal';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { LoadingState } from '../components/common/LoadingState';
+import { PasswordInput } from '../components/common/PasswordInput';
 import { useToast } from '../components/common/Toast';
 import { formatDateTime } from '../utils/format';
 import {
@@ -54,13 +56,34 @@ interface NotificationRow {
   createdAt: string;
 }
 
+interface PendingBackupPreview {
+  fileName: string;
+  version: string;
+  exportedAt: string | null;
+  counts: {
+    products: number;
+    categories: number;
+    suppliers: number;
+    customers: number;
+    sales: number;
+    payments: number;
+    expenses: number;
+    debtTransactions: number;
+    totalRecords: number;
+  };
+  snapshot: unknown;
+}
+
 export function SettingsPage() {
   const { showToast } = useToast();
+  const backupInputRef = useRef<HTMLInputElement>(null);
   const [tab, setTab] = useState<'store' | 'security' | 'audit' | 'notifications'>('store');
   const [settings, setSettings] = useState<StoreSettings | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditRow[]>([]);
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pendingBackup, setPendingBackup] = useState<PendingBackupPreview | null>(null);
+  const [restoringBackup, setRestoringBackup] = useState(false);
 
   const [pwForm, setPwForm] = useState({
     currentPassword: '',
@@ -139,6 +162,86 @@ export function SettingsPage() {
     }
   };
 
+  const handleBackupFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as {
+        version?: unknown;
+        exportedAt?: unknown;
+        data?: Record<string, unknown>;
+      };
+
+      const data = parsed?.data;
+      if (
+        !parsed ||
+        typeof parsed !== 'object' ||
+        !data ||
+        typeof data !== 'object' ||
+        !Array.isArray(data.categories) ||
+        !Array.isArray(data.products) ||
+        !Array.isArray(data.customers) ||
+        !Array.isArray(data.sales)
+      ) {
+        showToast('Invalid Zamora backup JSON file format', 'error');
+        return;
+      }
+
+      const arrLen = (key: string) => (Array.isArray(data[key]) ? data[key].length : 0);
+      const totalRecords = Object.values(data).reduce<number>(
+        (sum, val) => sum + (Array.isArray(val) ? val.length : 0),
+        0
+      );
+
+      setPendingBackup({
+        fileName: file.name,
+        version: typeof parsed.version === 'string' ? parsed.version : '1.0',
+        exportedAt: typeof parsed.exportedAt === 'string' ? parsed.exportedAt : null,
+        counts: {
+          products: arrLen('products'),
+          categories: arrLen('categories'),
+          suppliers: arrLen('suppliers'),
+          customers: arrLen('customers'),
+          sales: arrLen('sales'),
+          payments: arrLen('payments'),
+          expenses: arrLen('expenses'),
+          debtTransactions: arrLen('debtTransactions'),
+          totalRecords,
+        },
+        snapshot: parsed,
+      });
+    } catch {
+      showToast('Could not parse backup JSON file', 'error');
+    }
+  };
+
+  const handleConfirmRestoreBackup = async () => {
+    if (!pendingBackup || restoringBackup) return;
+    setRestoringBackup(true);
+    try {
+      const res = await api.post<{ restored: boolean; counts: { totalRecords: number } }>(
+        '/settings/backup/restore',
+        {
+          confirmReplace: true,
+          snapshot: pendingBackup.snapshot,
+        }
+      );
+      setPendingBackup(null);
+      showToast(
+        `Database restored (${res.counts.totalRecords.toLocaleString()} records loaded)`,
+        'success'
+      );
+      await loadAll();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Backup restore failed', 'error');
+    } finally {
+      setRestoringBackup(false);
+    }
+  };
+
   if (loading || !settings) return <LoadingState label="Loading settings..." />;
 
   return (
@@ -150,18 +253,36 @@ export function SettingsPage() {
             Configure store identity, M-Pesa/SMS integrations, password, backups, and security logs
           </p>
         </div>
-        <button
-          onClick={() =>
-            downloadBinaryFile(
-              '/settings/backup',
-              `zamora-backup-${new Date().toISOString().slice(0, 10)}.json`
-            )
-          }
-          className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800"
-        >
-          <Database className="h-4 w-4" />
-          Download Full DB Backup (JSON)
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            ref={backupInputRef}
+            type="file"
+            accept=".json,application/json"
+            onChange={handleBackupFileSelected}
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => backupInputRef.current?.click()}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            <Upload className="h-4 w-4" />
+            Restore Backup (JSON)
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              downloadBinaryFile(
+                '/settings/backup',
+                `zamora-backup-${new Date().toISOString().slice(0, 10)}.json`
+              )
+            }
+            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+          >
+            <Database className="h-4 w-4" />
+            Download Full DB Backup (JSON)
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-2 border-b border-slate-200 pb-3 overflow-x-auto">
@@ -456,38 +577,38 @@ export function SettingsPage() {
             <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
               Current Password
             </label>
-            <input
-              type="password"
+            <PasswordInput
               required
+              autoComplete="current-password"
               value={pwForm.currentPassword}
               onChange={(e) => setPwForm((f) => ({ ...f, currentPassword: e.target.value }))}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              className="py-2 text-sm"
             />
           </div>
           <div>
             <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
               New Password
             </label>
-            <input
-              type="password"
+            <PasswordInput
               required
               minLength={8}
+              autoComplete="new-password"
               value={pwForm.newPassword}
               onChange={(e) => setPwForm((f) => ({ ...f, newPassword: e.target.value }))}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              className="py-2 text-sm"
             />
           </div>
           <div>
             <label className="block text-xs font-semibold uppercase text-slate-600 mb-1">
               Confirm New Password
             </label>
-            <input
-              type="password"
+            <PasswordInput
               required
               minLength={8}
+              autoComplete="new-password"
               value={pwForm.confirmPassword}
               onChange={(e) => setPwForm((f) => ({ ...f, confirmPassword: e.target.value }))}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              className="py-2 text-sm"
             />
           </div>
           <button
@@ -616,6 +737,98 @@ export function SettingsPage() {
         </div>
         </div>
       )}
+
+      <Modal
+        open={Boolean(pendingBackup)}
+        onClose={() => !restoringBackup && setPendingBackup(null)}
+        title="Confirm Database Backup Restore"
+        subtitle={pendingBackup ? `${pendingBackup.fileName} (v${pendingBackup.version})` : undefined}
+      >
+        {pendingBackup && (
+          <div className="space-y-4">
+            <div className="flex items-start gap-2.5 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
+              <div>
+                <p className="font-semibold">This replaces all current store records.</p>
+                <p className="mt-1">
+                  Products, stock batches, customers, sales, payments, debt ledger entries,
+                  expenses, and store settings will be overwritten with this backup. Your owner
+                  login password and audit logs are preserved.
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs space-y-2">
+              <div className="flex items-center justify-between text-slate-600">
+                <span>Backup Created</span>
+                <span className="font-medium text-slate-900">
+                  {pendingBackup.exportedAt ? formatDateTime(pendingBackup.exportedAt) : 'Unknown'}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-200">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Products</span>
+                  <span className="font-semibold text-slate-900">{pendingBackup.counts.products}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Categories</span>
+                  <span className="font-semibold text-slate-900">{pendingBackup.counts.categories}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Customers</span>
+                  <span className="font-semibold text-slate-900">{pendingBackup.counts.customers}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Suppliers</span>
+                  <span className="font-semibold text-slate-900">{pendingBackup.counts.suppliers}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Sales</span>
+                  <span className="font-semibold text-slate-900">{pendingBackup.counts.sales}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Payments</span>
+                  <span className="font-semibold text-slate-900">{pendingBackup.counts.payments}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Expenses</span>
+                  <span className="font-semibold text-slate-900">{pendingBackup.counts.expenses}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Debt Ledger</span>
+                  <span className="font-semibold text-slate-900">
+                    {pendingBackup.counts.debtTransactions}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center justify-between pt-2 border-t border-slate-200 font-semibold text-slate-900">
+                <span>Total Records Across Tables</span>
+                <span>{pendingBackup.counts.totalRecords.toLocaleString()}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={restoringBackup}
+                onClick={() => setPendingBackup(null)}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={restoringBackup}
+                onClick={handleConfirmRestoreBackup}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+              >
+                <Upload className="h-3.5 w-3.5" />
+                {restoringBackup ? 'Restoring Backup...' : 'Restore Backup Now'}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
