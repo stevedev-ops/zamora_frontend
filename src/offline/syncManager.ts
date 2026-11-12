@@ -1,3 +1,4 @@
+import { apiUrl, getStoredOwnerToken } from '../api/config';
 import {
   cacheGet,
   cacheGetAll,
@@ -10,7 +11,6 @@ import {
   OutboxMutationKind,
 } from './offlineDb';
 
-const TOKEN_KEY = 'zamora_owner_token';
 const TEMP_ID_MAP_KEY = 'META:tempIdMap';
 
 type SyncListener = () => void;
@@ -793,7 +793,7 @@ export async function flushOutbox(): Promise<{ synced: number; failed: number }>
     let failed = 0;
 
     try {
-      const token = typeof localStorage !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null;
+      const token = getStoredOwnerToken();
       const tempIdCache = (await cacheGet<Record<string, string>>(TEMP_ID_MAP_KEY))?.data ?? {};
       const tempMap: Record<string, string> = { ...tempIdCache };
 
@@ -837,7 +837,7 @@ export async function flushOutbox(): Promise<{ synced: number; failed: number }>
         if (token) headers.set('Authorization', `Bearer ${token}`);
 
         try {
-          const res = await fetch(`/api${resolvedPath}`, {
+          const res = await fetch(apiUrl(resolvedPath), {
             method: item.method,
             headers,
             credentials: 'include',
@@ -954,7 +954,7 @@ export async function restockAndRetryOfflineSale(item: OutboxItem): Promise<{
     return { restockedProducts: 0, synced: 0, failed: 0, error: 'You are currently offline.' };
   }
 
-  const token = typeof localStorage !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null;
+  const token = getStoredOwnerToken();
   const tempMap = (await cacheGet<Record<string, string>>(TEMP_ID_MAP_KEY))?.data ?? {};
   const headers = new Headers();
   headers.set('Content-Type', 'application/json');
@@ -975,7 +975,7 @@ export async function restockAndRetryOfflineSale(item: OutboxItem): Promise<{
 
   let restockedProducts = 0;
   try {
-    const prodRes = await fetch('/api/products?status=ACTIVE', {
+    const prodRes = await fetch(apiUrl('/products?status=ACTIVE'), {
       credentials: 'include',
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     });
@@ -994,7 +994,7 @@ export async function restockAndRetryOfflineSale(item: OutboxItem): Promise<{
       const currentStock = liveProd ? Number(liveProd.currentStock || 0) : 0;
       const shortfall = neededQty - currentStock;
       if (shortfall > 0) {
-        const adjRes = await fetch('/api/inventory/adjust', {
+        const adjRes = await fetch(apiUrl('/inventory/adjust'), {
           method: 'POST',
           credentials: 'include',
           headers,

@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { api } from '../api/client';
+import { clearStoredOwnerToken, setStoredOwnerToken } from '../api/config';
 
 export interface OwnerUser {
   id: string;
@@ -39,13 +40,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [refreshUser]);
 
   const login = async (email: string, password: string) => {
-    const data = await api.post<{ user: OwnerUser }>('/auth/login', { email, password });
+    const data = await api.post<{ user: OwnerUser; token?: string }>('/auth/login', {
+      email,
+      password,
+    });
+    if (data.token) {
+      setStoredOwnerToken(data.token);
+    }
     setUser(data.user);
   };
 
   const logout = async () => {
-    await api.post('/auth/logout');
-    setUser(null);
+    try {
+      await api.post('/auth/logout');
+    } finally {
+      clearStoredOwnerToken();
+      setUser(null);
+    }
   };
 
   return (

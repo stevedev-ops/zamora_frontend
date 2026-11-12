@@ -1,4 +1,9 @@
 import {
+  apiUrl,
+  clearStoredOwnerToken,
+  getStoredOwnerToken,
+} from './config';
+import {
   cacheDelete,
   cacheGet,
   cacheSet,
@@ -84,18 +89,24 @@ export async function apiRequest<T>(
   }
 
   try {
-    const resp = await fetch(`/api${path}`, {
+    const isPortalPath = path.startsWith('/portal/');
+    const ownerToken = !portalSession && !isPortalPath ? getStoredOwnerToken() : null;
+    const resp = await fetch(apiUrl(path), {
       ...rest,
       credentials: 'include',
       headers: {
         ...(rest.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(ownerToken ? { Authorization: `Bearer ${ownerToken}` } : {}),
         ...(portalSession ? { 'x-portal-session': portalSession } : {}),
         ...headers,
       },
     });
 
-    if (method === 'GET' && path === '/auth/me' && resp.status === 401) {
-      await cacheDelete('GET:/auth/me');
+    if (!portalSession && !isPortalPath && resp.status === 401) {
+      clearStoredOwnerToken();
+      if (method === 'GET' && path === '/auth/me') {
+        await cacheDelete('GET:/auth/me');
+      }
     }
 
     const data = await handleResponse<T>(resp);
@@ -164,9 +175,15 @@ export async function downloadBinaryFile(
   filename: string,
   portalSession?: string
 ): Promise<void> {
-  const resp = await fetch(`/api${path}`, {
+  const isPortalPath = path.startsWith('/portal/');
+  const ownerToken = !portalSession && !isPortalPath ? getStoredOwnerToken() : null;
+  const headers: Record<string, string> = {};
+  if (ownerToken) headers.Authorization = `Bearer ${ownerToken}`;
+  if (portalSession) headers['x-portal-session'] = portalSession;
+
+  const resp = await fetch(apiUrl(path), {
     credentials: 'include',
-    headers: portalSession ? { 'x-portal-session': portalSession } : undefined,
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
   });
   if (!resp.ok) {
     throw new ApiError('Failed to download file', resp.status);
