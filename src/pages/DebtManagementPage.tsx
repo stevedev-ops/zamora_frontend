@@ -125,10 +125,7 @@ export function DebtManagementPage() {
     amount: '',
     reason: '',
   });
-  const [lastTransferPrompt, setLastTransferPrompt] = useState<{
-    confirmationUrl: string;
-    devOtp?: string;
-  } | null>(null);
+  const [transferSubmitting, setTransferSubmitting] = useState(false);
 
   const [adjustForm, setAdjustForm] = useState({
     customerId: '',
@@ -206,24 +203,56 @@ export function DebtManagementPage() {
 
   const handleTransferSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      const res = await api.post<{ confirmationUrl: string; devOtp?: string }>(
-        '/debt/transfers',
-        {
-          fromCustomerId: transferForm.fromCustomerId,
-          toCustomerId: transferForm.toCustomerId,
-          amount: Number(transferForm.amount),
-          reason: transferForm.reason,
-          idempotencyKey: generateIdempotencyKey('trf'),
-        }
+    if (transferSubmitting) return;
+
+    const fromCust = customers.find((c) => c.id === transferForm.fromCustomerId);
+    const toCust = customers.find((c) => c.id === transferForm.toCustomerId);
+    const amountNum = Number(transferForm.amount);
+
+    if (!fromCust || !toCust || !amountNum || amountNum <= 0) {
+      showToast('Please select both customers and enter a valid transfer amount', 'error');
+      return;
+    }
+
+    if (amountNum > fromCust.currentDebt) {
+      showToast(
+        `Transfer amount (${formatKsh(amountNum)}) exceeds ${fromCust.fullName}'s current debt (${formatKsh(fromCust.currentDebt)})`,
+        'error'
       );
-      setLastTransferPrompt({ confirmationUrl: res.confirmationUrl, devOtp: res.devOtp });
-      showToast('Debt transfer initiated. Awaiting receiving customer confirmation.', 'success');
+      return;
+    }
+
+    setTransferSubmitting(true);
+    try {
+      const res = await api.post<{
+        transfer: { referenceNumber: string; amount: number };
+        fromNewBalance: number;
+        toNewBalance: number;
+      }>('/debt/transfers', {
+        fromCustomerId: transferForm.fromCustomerId,
+        toCustomerId: transferForm.toCustomerId,
+        amount: amountNum,
+        reason: transferForm.reason.trim(),
+        idempotencyKey: generateIdempotencyKey('trf'),
+      });
+
+      showToast(
+        `Debt of ${formatKsh(amountNum)} transferred from ${fromCust.fullName} to ${toCust.fullName}! (Ref: ${res.transfer.referenceNumber})`,
+        'success'
+      );
       setTransferOpen(false);
+      setTransferForm({
+        fromCustomerId: '',
+        toCustomerId: '',
+        amount: '',
+        reason: '',
+      });
       setTab('transfers');
       await loadAll();
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Transfer initiation failed', 'error');
+      showToast(err instanceof Error ? err.message : 'Transfer failed', 'error');
+    } finally {
+      setTransferSubmitting(false);
     }
   };
 
@@ -446,30 +475,6 @@ export function DebtManagementPage() {
           </button>
         </div>
       </div>
-
-      {lastTransferPrompt && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 space-y-1">
-          <p className="font-semibold">
-            Debt Transfer Request Created — Waiting for Receiving Customer Acceptance
-          </p>
-          <p className="text-xs">
-            Confirmation Link:{' '}
-            <a
-              href={lastTransferPrompt.confirmationUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="font-mono underline text-slate-900"
-            >
-              {lastTransferPrompt.confirmationUrl}
-            </a>
-          </p>
-          {lastTransferPrompt.devOtp && (
-            <p className="text-xs">
-              Dev Mock SMS OTP: <strong className="font-mono">{lastTransferPrompt.devOtp}</strong>
-            </p>
-          )}
-        </div>
-      )}
 
       {/* Tabs & Customer filter */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
@@ -1099,7 +1104,7 @@ export function DebtManagementPage() {
                             onClick={() => setAcceptOtpTarget(tr)}
                             className="flex-1 rounded bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
                           >
-                            Verify OTP
+                            Finalize Transfer
                           </button>
                           <button
                             type="button"
@@ -1177,7 +1182,7 @@ export function DebtManagementPage() {
                               onClick={() => setAcceptOtpTarget(tr)}
                               className="rounded bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
                             >
-                              Verify OTP
+                              Finalize Transfer
                             </button>
                             <button
                               type="button"
@@ -1366,9 +1371,9 @@ export function DebtManagementPage() {
       {/* Debt Transfer Modal */}
       <Modal
         open={transferOpen}
-        onClose={() => setTransferOpen(false)}
-        title="Initiate Debt Transfer"
-        subtitle="Requires receiving customer acceptance via OTP or confirmation link"
+        onClose={() => !transferSubmitting && setTransferOpen(false)}
+        title="Transfer Customer Debt"
+        subtitle="Directly transfer an existing debt balance from one customer to another (updates both balances immediately, no OTP required)"
       >
         <form onSubmit={handleTransferSubmit} className="space-y-4">
           <div>
@@ -1377,9 +1382,10 @@ export function DebtManagementPage() {
             </label>
             <select
               required
+              disabled={transferSubmitting}
               value={transferForm.fromCustomerId}
               onChange={(e) => setTransferForm((f) => ({ ...f, fromCustomerId: e.target.value }))}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:opacity-50"
             >
               <option value="">Select Customer...</option>
               {debtors.map((c) => (
@@ -1395,9 +1401,10 @@ export function DebtManagementPage() {
             </label>
             <select
               required
+              disabled={transferSubmitting}
               value={transferForm.toCustomerId}
               onChange={(e) => setTransferForm((f) => ({ ...f, toCustomerId: e.target.value }))}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:opacity-50"
             >
               <option value="">Select Receiving Customer...</option>
               {customers
@@ -1418,9 +1425,10 @@ export function DebtManagementPage() {
               required
               min="1"
               step="0.01"
+              disabled={transferSubmitting}
               value={transferForm.amount}
               onChange={(e) => setTransferForm((f) => ({ ...f, amount: e.target.value }))}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm tabular-nums"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm tabular-nums disabled:opacity-50"
             />
           </div>
           <div>
@@ -1430,44 +1438,66 @@ export function DebtManagementPage() {
             <textarea
               required
               rows={2}
+              disabled={transferSubmitting}
               value={transferForm.reason}
               onChange={(e) => setTransferForm((f) => ({ ...f, reason: e.target.value }))}
               placeholder="e.g. Peter agreed to take responsibility for KSh 2,000"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:opacity-50"
             />
           </div>
           <button
             type="submit"
-            className="w-full rounded-lg bg-slate-900 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+            disabled={
+              transferSubmitting ||
+              !transferForm.fromCustomerId ||
+              !transferForm.toCustomerId ||
+              !transferForm.amount
+            }
+            className="w-full rounded-lg bg-emerald-600 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
           >
-            Send Transfer Acceptance Request
+            {transferSubmitting ? 'Transferring Debt...' : 'Transfer Debt Now'}
           </button>
         </form>
       </Modal>
 
-      {/* Verify Transfer OTP Modal */}
+      {/* Verify Transfer / Finalize Modal for legacy transfers */}
       <Modal
         open={Boolean(acceptOtpTarget)}
         onClose={() => setAcceptOtpTarget(null)}
-        title={`Confirm Transfer ${acceptOtpTarget?.referenceNumber || ''}`}
-        subtitle={`Enter OTP sent to ${acceptOtpTarget?.toCustomer.fullName}`}
+        title={`Finalize Transfer ${acceptOtpTarget?.referenceNumber || ''}`}
+        subtitle={`Transfer ${formatKsh(acceptOtpTarget?.amount || 0)} from ${acceptOtpTarget?.fromCustomer.fullName} to ${acceptOtpTarget?.toCustomer.fullName}`}
       >
-        <form onSubmit={handleAcceptWithOtp} className="space-y-4">
-          <input
-            type="text"
-            required
-            placeholder="Enter 6-digit OTP"
-            value={acceptOtpValue}
-            onChange={(e) => setAcceptOtpValue(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-center text-lg font-mono tracking-widest"
-          />
-          <button
-            type="submit"
-            className="w-full rounded-lg bg-emerald-600 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700"
-          >
-            Finalize Debt Transfer
-          </button>
-        </form>
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            Clicking finalize will immediately transfer the debt between the two accounts and update their balances.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setAcceptOtpTarget(null)}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                if (!acceptOtpTarget) return;
+                try {
+                  await api.post(`/debt/transfers/${acceptOtpTarget.id}/accept`, { otp: 'DIRECT' });
+                  showToast('Debt transfer finalized and balances updated!', 'success');
+                  setAcceptOtpTarget(null);
+                  await loadAll();
+                } catch (err) {
+                  showToast(err instanceof Error ? err.message : 'Transfer finalization failed', 'error');
+                }
+              }}
+              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+            >
+              Finalize Transfer Now
+            </button>
+          </div>
+        </div>
       </Modal>
 
       {/* Debt Adjustment Modal */}
